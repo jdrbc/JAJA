@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+dist/
+*.min.js
+*.min.css
+
+# Generated files
+coverage/
+*.map
+
+# Configuration files
+tailwind.config.js
+postcss.config.js
+cypress.config.js
+
+# Vendor/generated files
+public/
+src/**/*.wasm
+src/**/*.js.map
+
+# Test files (if you want to exclude them)
+cypress/
+src/**/*.test.js
+src/**/*.test.ts
+src/**/*.test.tsx
+
+# OS files
+.DS_Store
+Thumbs.db 

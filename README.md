@@ -65,6 +65,9 @@ npm run cypress:open
 
 ## TODO
 
+- add local 'save' indicator back in 
+- fix up mobile UI
+- conflict detection
 - Long term goals: https://docs.google.com/document/d/1wAp0DcylMbzHzXFrdqEAC_S-Nf93OmCjlKkRVTzqHnw/edit?tab=t.0
 - Week planner: https://docs.google.com/document/d/174Z-Yvlg8_8mnzsKVTmuaEHVv8tErmacv5jR4Z5S4I8/edit?tab=t.0
 - Month planner: https://docs.google.com/document/d/1naMYLwju94JqvDOr_l-ApbYZCQoL1WRYXgBybxPkVKU/edit?tab=t.0

@@ -154,6 +154,27 @@ export const useTemplateManagement = () => {
     [setIsDirty]
   );
 
+  const updateSectionSilent = useCallback(
+    async (id: string, updates: Partial<SectionTemplate>) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const updatedSection = await localApiService.updateTemplateSection(
+          id,
+          updates
+        );
+        // Don't set isDirty to avoid triggering template reload
+        return updatedSection;
+      } catch (err) {
+        setError('Failed to update section');
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
   const deleteSection = useCallback(
     async (id: string) => {
       setIsLoading(true);
@@ -234,6 +255,7 @@ export const useTemplateManagement = () => {
     // Section operations
     createSection,
     updateSection,
+    updateSectionSilent,
     deleteSection,
     reorderSections,
     moveSectionToColumn,

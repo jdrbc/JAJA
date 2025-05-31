@@ -5,6 +5,7 @@ import {
 } from '../types/cloudStorage';
 import { logger } from '../utils/logger';
 import { GoogleDriveAppDataProvider } from './providers/googleDriveProvider';
+import { createDebouncedCloudSave } from '../utils/debounceUtils';
 
 class CloudStorageManager {
   private providers: Map<string, CloudStorageProvider> = new Map();
@@ -22,6 +23,7 @@ class CloudStorageManager {
   // Callbacks for UI updates
   private onStatusChange: ((status: CloudSyncStatus) => void) | null = null;
   private onDataChange: (() => void) | null = null;
+  private debouncedCloudSave: ((databaseService: any) => void) | null = null;
 
   constructor() {
     this.registerProvider(new GoogleDriveAppDataProvider());
@@ -282,20 +284,16 @@ class CloudStorageManager {
   // Called by database service when data changes
   onDatabaseChange(databaseService: any): void {
     if (this.syncSettings.autoSync && this.activeProvider) {
-      // Debounce saves to avoid too many API calls
-      if (this.saveTimeout) {
-        clearTimeout(this.saveTimeout);
+      // Initialize debounced save if not already created
+      if (!this.debouncedCloudSave) {
+        this.debouncedCloudSave = createDebouncedCloudSave((dbService: any) =>
+          this.saveToCloud(dbService)
+        );
       }
 
-      this.saveTimeout = setTimeout(() => {
-        this.saveToCloud(databaseService).catch(error => {
-          logger.error('Auto-save failed:', error);
-        });
-      }, 2000); // Wait 2 seconds after last change
+      this.debouncedCloudSave(databaseService);
     }
   }
-
-  private saveTimeout: NodeJS.Timeout | null = null;
 }
 
 export const cloudStorageManager = new CloudStorageManager();

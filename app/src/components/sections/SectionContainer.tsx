@@ -2,6 +2,8 @@ import React from 'react';
 import BaseSection from './BaseSection';
 import TodoSection from './TodoSection';
 import HeaderSection from './HeaderSection';
+import BaseSectionPropertyEditor from './SectionPropertyEditor';
+import HeaderSectionPropertyEditor from './HeaderSectionPropertyEditor';
 import MenuDropdown from '../ui/MenuDropdown';
 import IconButton from '../ui/IconButton';
 import { SectionTemplate } from '../../services/api';
@@ -14,7 +16,10 @@ interface SectionContainerProps {
   onContentChange: (id: string, content: string) => void;
   isEditMode?: boolean;
   onSectionDelete?: () => void;
-  onSectionTitleEdit?: (newTitle: string) => void;
+  onUpdate?: () => void;
+  openPropertiesSectionId?: string | null;
+  onSectionPropertiesOpen?: () => void;
+  onSectionPropertiesClose?: () => void;
 }
 
 const SectionContainer: React.FC<SectionContainerProps> = ({
@@ -23,7 +28,10 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
   onContentChange,
   isEditMode = false,
   onSectionDelete,
-  onSectionTitleEdit,
+  onUpdate,
+  openPropertiesSectionId,
+  onSectionPropertiesOpen,
+  onSectionPropertiesClose,
 }) => {
   const {
     attributes,
@@ -79,11 +87,25 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
     );
   };
 
-  const handleTitleEdit = () => {
-    const newTitle = prompt('Enter new section title:', section.title);
-    if (newTitle && newTitle.trim() !== section.title && onSectionTitleEdit) {
-      onSectionTitleEdit(newTitle.trim());
+  const renderPropertyEditor = () => {
+    if (section.content_type === 'header') {
+      return (
+        <HeaderSectionPropertyEditor
+          section={section}
+          onClose={() => onSectionPropertiesClose?.()}
+          onUpdate={onUpdate}
+        />
+      );
     }
+
+    // Default to base property editor for other types
+    return (
+      <BaseSectionPropertyEditor
+        section={section}
+        onClose={() => onSectionPropertiesClose?.()}
+        onUpdate={onUpdate}
+      />
+    );
   };
 
   const style = {
@@ -99,51 +121,83 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
       style={style}
       className={`section-container group ${
         isEditMode
-          ? 'border-2 border-dashed border-gray-300 bg-gray-50 p-4 rounded-lg cursor-move'
+          ? 'border-2 border-dashed border-gray-300 bg-gray-50 rounded-lg'
           : ''
       }`}
-      {...(isEditMode ? { ...attributes, ...listeners } : {})}
     >
-      {isEditMode && (
-        <div className='flex justify-between items-center mb-3'>
+      {isEditMode ? (
+        <div className='flex'>
+          {/* Full-height drag handle */}
           <div
-            className='flex items-center space-x-2 select-none'
+            className='flex-shrink-0 w-12 flex flex-col items-center justify-center bg-gray-200 hover:bg-gray-300 transition-colors cursor-move select-none rounded-l-lg'
             style={{ userSelect: 'none' }}
+            {...attributes}
+            {...listeners}
           >
-            <span className='text-sm text-gray-500'>⋮⋮</span>
-            <span className='text-sm font-medium text-gray-700'>
-              {section.title}
-            </span>
+            {/* Three columns of small dots */}
+            <div className='flex items-center space-x-1 py-2'>
+              {Array.from({ length: 3 }, (_, i) => (
+                <div key={i} className='flex flex-col space-y-1'>
+                  {Array.from({ length: 6 }, (_, j) => (
+                    <div
+                      key={j}
+                      className='w-1 h-1 bg-gray-500 rounded-full'
+                    ></div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
-          <MenuDropdown
-            trigger={
-              <IconButton
-                onClick={() => {}}
-                className='opacity-0 group-hover:opacity-100 transition-opacity'
-                size='sm'
-                title='Section options'
-              >
-                <span className='text-gray-500'>⋯</span>
-              </IconButton>
-            }
-            options={[
-              {
-                label: 'Edit Title',
-                onClick: handleTitleEdit,
-              },
-              {
-                label: 'Delete Section',
-                onClick: onSectionDelete || (() => {}),
-                variant: 'danger',
-              },
-            ]}
-          />
-        </div>
-      )}
 
-      <div className={isEditMode ? 'pointer-events-none opacity-60' : ''}>
-        {renderSectionComponent()}
-      </div>
+          {/* Main content area */}
+          <div className='flex-1'>
+            {/* Edit mode header */}
+            <div className='flex justify-between items-center p-4'>
+              <div className='flex items-center'>
+                <span className='text-sm font-medium text-gray-700'>
+                  {section.title}
+                </span>
+              </div>
+              <MenuDropdown
+                trigger={
+                  <IconButton
+                    onClick={() => {}}
+                    className='opacity-0 group-hover:opacity-100 transition-opacity'
+                    size='sm'
+                    title='Section options'
+                  >
+                    <span className='text-gray-500'>⋯</span>
+                  </IconButton>
+                }
+                options={[
+                  {
+                    label: 'Delete Section',
+                    onClick: onSectionDelete || (() => {}),
+                    variant: 'danger',
+                  },
+                ]}
+              />
+            </div>
+
+            {/* Property editor or edit properties button */}
+            {isEditMode && openPropertiesSectionId === section.id ? (
+              renderPropertyEditor()
+            ) : (
+              <div className='px-4 pb-4'>
+                <button
+                  onClick={() => onSectionPropertiesOpen?.()}
+                  className='w-full px-4 py-3 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+                >
+                  Edit Properties
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        // Normal mode - render section content
+        renderSectionComponent()
+      )}
     </div>
   );
 };

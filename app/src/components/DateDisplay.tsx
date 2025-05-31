@@ -35,7 +35,7 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
           {isLoading ? (
             <span className='inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1'></span>
           ) : null}
-          ← Prev
+          ←&nbsp;Prev
         </button>
         <button
           onClick={onNextDay}
@@ -43,7 +43,7 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
           disabled={isCurrentDay || isLoading}
           aria-label='Next day'
         >
-          Next →
+          Next&nbsp;→
           {isLoading ? (
             <span className='inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin ml-1'></span>
           ) : null}

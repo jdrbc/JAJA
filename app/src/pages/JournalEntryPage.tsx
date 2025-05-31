@@ -13,7 +13,7 @@ import {
 import localApiService from '../services/localApi';
 import { formatDateForAPI } from '../utils/dates';
 import { logger } from '../utils/logger';
-import debounce from 'lodash/debounce';
+import { createDebouncedEntrySave } from '../utils/debounceUtils';
 
 const JournalEntryPage: React.FC = () => {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
@@ -129,19 +129,12 @@ const JournalEntryPage: React.FC = () => {
     loadEntry();
   }, [currentDate]);
 
-  // Debounced save function
-  const debouncedSave = useMemo(
-    () =>
-      debounce(async (entryToSave: JournalEntry) => {
-        try {
-          await localApiService.updateEntry(entryToSave.date, entryToSave);
-        } catch (err) {
-          logger.error('Failed to save entry:', err);
-          setError('Failed to save changes. Please try again.');
-        }
-      }, 1000),
-    []
-  );
+  // Debounced save function using utility
+  const debouncedSave = useCallback(() => {
+    return createDebouncedEntrySave((date: string, entry: any) => {
+      return localApiService.updateEntry(date, entry);
+    });
+  }, []);
 
   // Handle section content changes
   const handleSectionChange = (sectionId: string, content: string) => {
@@ -159,7 +152,7 @@ const JournalEntryPage: React.FC = () => {
     };
 
     setEntry(updatedEntry);
-    debouncedSave(updatedEntry);
+    debouncedSave()(updatedEntry);
   };
 
   // Convert entry sections to SectionWithContent format for ColumnLayout

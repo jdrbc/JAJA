@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import SectionContainer from '../sections/SectionContainer';
 import AddColumnButton from './AddColumnButton';
 import AddSectionButton from './AddSectionButton';
@@ -29,8 +29,12 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { isDragging } = useDragContext();
-  const { deleteColumn, deleteSection, updateColumn, updateSection } =
-    useTemplateManagement();
+  const { deleteColumn, deleteSection, updateColumn } = useTemplateManagement();
+
+  // Add state to track which section has properties panel open
+  const [openPropertiesSectionId, setOpenPropertiesSectionId] = useState<
+    string | null
+  >(null);
 
   const groupSectionsByColumn = () => {
     const grouped: Record<string, SectionWithContent[]> = {};
@@ -76,18 +80,6 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
       onTemplateChange();
     } catch (error) {
       logger.error('Failed to update column title:', error);
-    }
-  };
-
-  const handleSectionTitleEdit = async (
-    sectionId: string,
-    newTitle: string
-  ) => {
-    try {
-      await updateSection(sectionId, { title: newTitle });
-      onTemplateChange();
-    } catch (error) {
-      logger.error('Failed to update section title:', error);
     }
   };
 
@@ -139,6 +131,14 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
         logger.error('Failed to move column right:', error);
       }
     }
+  };
+
+  const handleSectionPropertiesOpen = (sectionId: string) => {
+    setOpenPropertiesSectionId(sectionId);
+  };
+
+  const handleSectionPropertiesClose = () => {
+    setOpenPropertiesSectionId(null);
   };
 
   // Custom Draggable Column Component for Template Editing
@@ -278,7 +278,6 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
           isColumnDragging={isColumnCurrentlyDragged}
           onContentChange={onContentChange}
           onSectionDelete={handleSectionDelete}
-          onSectionTitleEdit={handleSectionTitleEdit}
           onTemplateChange={onTemplateChange}
         />
       </div>
@@ -292,7 +291,6 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
     isColumnDragging: boolean;
     onContentChange: (sectionId: string, content: string) => void;
     onSectionDelete: (sectionId: string) => void;
-    onSectionTitleEdit: (sectionId: string, newTitle: string) => void;
     onTemplateChange: () => void;
   }> = ({
     column,
@@ -300,7 +298,6 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
     isColumnDragging,
     onContentChange,
     onSectionDelete,
-    onSectionTitleEdit,
     onTemplateChange,
   }) => {
     const { setNodeRef, isOver } = useDroppable({
@@ -342,9 +339,12 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
                 onContentChange={onContentChange}
                 isEditMode={true}
                 onSectionDelete={() => onSectionDelete(section.id)}
-                onSectionTitleEdit={newTitle =>
-                  onSectionTitleEdit(section.id, newTitle)
+                onUpdate={onTemplateChange}
+                openPropertiesSectionId={openPropertiesSectionId}
+                onSectionPropertiesOpen={() =>
+                  handleSectionPropertiesOpen(section.id)
                 }
+                onSectionPropertiesClose={handleSectionPropertiesClose}
               />
             ))}
 

@@ -36,7 +36,10 @@ const AddColumnButton: React.FC<AddColumnButtonProps> = ({ onColumnAdded }) => {
 
   if (isCreating) {
     return (
-      <div className='flex-shrink-0 w-80 h-full pr-4 pl-4 border-r border-gray-200 bg-white shadow-sm'>
+      <div
+        className='flex-shrink-0 h-full pr-4 pl-4 border-r border-gray-200 bg-white shadow-sm'
+        style={{ width: 'min(320px, 100vw)' }}
+      >
         <div className='p-4 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50'>
           <div className='space-y-3'>
             <input
@@ -73,7 +76,10 @@ const AddColumnButton: React.FC<AddColumnButtonProps> = ({ onColumnAdded }) => {
   }
 
   return (
-    <div className='flex-shrink-0 w-80 h-full pr-4 pl-4'>
+    <div
+      className='flex-shrink-0 h-full pr-4 pl-4'
+      style={{ width: 'min(320px, 100vw)' }}
+    >
       <button
         onClick={() => setIsCreating(true)}
         className='w-full h-32 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors flex items-center justify-center group'

@@ -97,7 +97,11 @@ const TemplatePreview: React.FC<TemplatePreviewProps> = ({
               <div
                 key={column.id}
                 className='flex-shrink-0 bg-gray-50 rounded-lg p-4'
-                style={{ width: `${column.width}px`, minWidth: '300px' }}
+                style={{
+                  width: `${column.width}px`,
+                  minWidth: 'min(300px, 100vw)',
+                  maxWidth: '100vw',
+                }}
               >
                 <div className='flex justify-between items-center mb-4'>
                   <h3 className='text-lg font-semibold text-gray-800'>

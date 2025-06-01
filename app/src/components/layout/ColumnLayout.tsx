@@ -37,7 +37,11 @@ const ColumnLayout: React.FC<ColumnLayoutProps> = ({
       <div
         key={column.id}
         className='flex-shrink-0 scroll-snap-align-start scroll-snap-stop-always h-full pr-4 pl-4 border-r border-gray-200 bg-white last:border-r-0 last:mr-4 shadow-sm overflow-y-auto'
-        style={{ width: `${column.width}px` }}
+        style={{
+          width: `${column.width}px`,
+          maxWidth: '100vw',
+          minWidth: 'min(280px, 100vw)',
+        }}
       >
         <div className='sticky top-0 bg-white z-10 pb-2'>
           <h2 className='text-lg font-semibold text-gray-700'>

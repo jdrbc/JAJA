@@ -40,3 +40,27 @@ body {
   /* Chrome, Safari, Opera */
   display: none;
 }
+
+/* Responsive column utilities */
+.column-responsive {
+  max-width: 100vw;
+  min-width: min(280px, 100vw);
+}
+
+.column-responsive-wide {
+  max-width: 100vw;
+  min-width: min(320px, 100vw);
+}
+
+/* Prevent columns from breaking layout on small screens */
+@media (max-width: 640px) {
+  .column-responsive {
+    min-width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+  }
+
+  .column-responsive-wide {
+    min-width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+  }
+}

@@ -85,24 +85,32 @@ const JournalEntryPage: React.FC = () => {
   }, [currentDate]);
 
   // Navigation functions
-  const navigateToDate = (date: Date) => {
+  const navigateToDate = async (date: Date) => {
     if (isLoading) return;
+
+    // Flush any pending saves before navigating
+    logger.log('Navigating to date, flushing pending saves...');
+    debouncedSave.flush();
+
+    // Wait a brief moment to ensure any ongoing save operations complete
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     navigate(`/?date=${formatDateForAPI(date)}`);
   };
 
-  const navigateToNextDay = () => {
+  const navigateToNextDay = async () => {
     const nextDay = addDays(currentDate, 1);
     const today = new Date();
 
     // Don't allow navigating into the future
     if (nextDay <= today) {
-      navigateToDate(nextDay);
+      await navigateToDate(nextDay);
     }
   };
 
-  const navigateToPreviousDay = () => {
+  const navigateToPreviousDay = async () => {
     const previousDay = addDays(currentDate, -1);
-    navigateToDate(previousDay);
+    await navigateToDate(previousDay);
   };
 
   const isCurrentDayToday = () => {

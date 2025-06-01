@@ -60,9 +60,9 @@ export class ReactiveDataService {
   ): Promise<JournalEntry> {
     const result = await localApiService.updateEntry(date, entry);
 
-    // Emit change events
-    dataEventEmitter.emit(`journal:${date}`);
-    dataEventEmitter.emit('journal:*');
+    // NOTE: We don't emit change events here to avoid triggering unnecessary reloads
+    // The caller already has the updated data, and emitting events could cause race conditions
+    // where the reload happens before the database transaction is fully committed
 
     // Trigger cloud sync if available
     if (this.syncService) {

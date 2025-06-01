@@ -92,6 +92,7 @@ export class LocalApiService {
 
       // If entry exists, get its sections
       if (entry) {
+        logger.log(`Entry found for ${date}, entry ID: ${entry.id}`);
         const sectionsStmt = db.prepare(
           'SELECT * FROM sections WHERE entry_id = ?'
         );
@@ -100,7 +101,9 @@ export class LocalApiService {
         const existingSections: { [key: string]: any } = {};
         while (sectionsStmt.step()) {
           const section = sectionsStmt.get({});
-          logger.log('section: ', section);
+          logger.log(
+            `Found existing section: ${section.type}, content length: ${section.content?.length || 0}`
+          );
           existingSections[section.type as string] = section;
         }
         sectionsStmt.finalize();
@@ -110,10 +113,17 @@ export class LocalApiService {
           const existingSection = existingSections[template.id];
           let content = '';
 
-          if (existingSection && existingSection.content) {
-            content = existingSection.content;
+          if (existingSection !== undefined) {
+            // Section exists in database - use its content (even if empty string)
+            content = existingSection.content ?? '';
+            logger.log(
+              `Using existing content for ${template.id}: "${content}" (length: ${content.length})`
+            );
           } else {
-            // Get persisted content based on refresh frequency
+            // Section doesn't exist in database - get persisted content or default
+            logger.log(
+              `No existing section found for ${template.id}, checking for persisted content...`
+            );
             content =
               (await this.getExistingSectionContent(
                 date,
@@ -122,6 +132,9 @@ export class LocalApiService {
               )) ||
               template.default_content ||
               '';
+            logger.log(
+              `Using fallback content for ${template.id}: "${content}" (length: ${content.length})`
+            );
           }
 
           sectionsData[template.id] = {
@@ -137,6 +150,7 @@ export class LocalApiService {
           };
         }
       } else {
+        logger.log(`No entry found for ${date}, creating empty structure`);
         // No entry exists, create empty structure with persisted content
         for (const template of templates.sections) {
           const persistedContent = await this.getExistingSectionContent(
@@ -159,6 +173,9 @@ export class LocalApiService {
         }
       }
 
+      logger.log(
+        `fetchEntryByDate returning entry for ${date} with ${Object.keys(sectionsData).length} sections`
+      );
       return {
         date,
         sections: sectionsData,

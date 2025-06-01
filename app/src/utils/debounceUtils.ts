@@ -30,13 +30,19 @@ export const createDebouncedSave = <T extends any[]>(
     }
   }, delay);
 
-  // Return a wrapper that calls onPending immediately
-  return (...args: T) => {
+  // Return a wrapper that calls onPending immediately and exposes flush/cancel
+  const wrapper = (...args: T) => {
     if (onPending) {
       onPending();
     }
     return debouncedFn(...args);
   };
+
+  // Expose flush and cancel methods from the debounced function
+  wrapper.flush = debouncedFn.flush;
+  wrapper.cancel = debouncedFn.cancel;
+
+  return wrapper;
 };
 
 /**

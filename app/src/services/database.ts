@@ -665,4 +665,6 @@ class DatabaseService {
   }
 }
 
-export default new DatabaseService();
+const databaseService = new DatabaseService();
+
+export default databaseService;

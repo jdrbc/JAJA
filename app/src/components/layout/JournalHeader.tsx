@@ -159,7 +159,7 @@ export default function JournalHeader({
               ) : (
                 <>
                   <span>📋</span>
-                  <span>Copy</span>
+                  <span>Copy Markdown</span>
                 </>
               )}
             </button>
@@ -212,7 +212,7 @@ export default function JournalHeader({
               ) : (
                 <>
                   <span className='text-lg'>📋</span>
-                  <span>Copy Journal</span>
+                  <span>Copy Markdown</span>
                 </>
               )}
             </button>

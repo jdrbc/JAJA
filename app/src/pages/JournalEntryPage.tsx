@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
 import { createDebouncedSave } from '../utils/debounceUtils';
 import { useSyncStore } from '../stores/syncStore';
+import { formatSectionToMarkdown } from '../utils/markdownFormatters';
 
 const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
@@ -150,24 +151,29 @@ const JournalEntryPage: React.FC = () => {
       );
   };
 
-  // Copy entry content to clipboard
-  const copyToClipboard = async () => {
+  // Copy entry content to markdown format
+  const copyToMarkdown = async () => {
     if (!localEntry) return;
 
     try {
-      const entryText = Object.entries(localEntry.sections)
+      const markdownSections = Object.entries(localEntry.sections)
         .map(([sectionId, section]) => {
           const template = templates.find(
             (t: SectionTemplate) => t.id === sectionId
           );
-          const title = template?.title || sectionId;
-          return `${title}:\n${section.content}\n`;
+          if (!template) return '';
+
+          return formatSectionToMarkdown({
+            template,
+            content: section.content,
+          });
         })
+        .filter(section => section.trim() !== '') // Remove empty sections
         .join('\n');
 
-      const fullText = `Journal Entry - ${format(currentDate, 'MMMM d, yyyy')}\n\n${entryText}`;
+      const fullMarkdown = `# Journal Entry - ${format(currentDate, 'MMMM d, yyyy')}\n\n${markdownSections}`;
 
-      await navigator.clipboard.writeText(fullText);
+      await navigator.clipboard.writeText(fullMarkdown);
       setCopyStatus('copied');
       setTimeout(() => setCopyStatus('idle'), 2000);
     } catch (err) {
@@ -207,7 +213,7 @@ const JournalEntryPage: React.FC = () => {
         onNavigateToPreviousDay={navigateToPreviousDay}
         isCurrentDayToday={isCurrentDayToday}
         copyStatus={copyStatus}
-        onCopyToClipboard={copyToClipboard}
+        onCopyToClipboard={copyToMarkdown}
       />
 
       {localEntry && (

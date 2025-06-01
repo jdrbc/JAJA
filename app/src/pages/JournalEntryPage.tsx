@@ -14,6 +14,7 @@ import { formatDateForAPI } from '../utils/dates';
 import { logger } from '../utils/logger';
 import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
 import { createDebouncedSave } from '../utils/debounceUtils';
+import { useSyncStore } from '../stores/syncStore';
 
 const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
@@ -21,6 +22,9 @@ const JournalEntryPage: React.FC = () => {
   const [localEntry, setLocalEntry] = useState<JournalEntry | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // Get sync store actions
+  const { setPending, completeSync, failSync } = useSyncStore();
 
   // Get current date from URL or default to today
   const getCurrentDateFromUrl = useCallback((): Date => {
@@ -56,10 +60,16 @@ const JournalEntryPage: React.FC = () => {
 
   // Create debounced save function
   const debouncedSave = useMemo(() => {
-    return createDebouncedSave(async (entryData: JournalEntry) => {
-      await updateEntry(entryData);
-    }, 1000);
-  }, [updateEntry]);
+    return createDebouncedSave(
+      async (entryData: JournalEntry) => {
+        await updateEntry(entryData);
+      },
+      1000,
+      () => setPending(), // Set pending immediately when changes are made
+      () => completeSync(), // Mark as complete when save finishes
+      error => failSync(error instanceof Error ? error.message : 'Save failed') // Handle errors
+    );
+  }, [updateEntry, setPending, completeSync, failSync]);
 
   // Update local state when entry changes from reactive service
   useEffect(() => {

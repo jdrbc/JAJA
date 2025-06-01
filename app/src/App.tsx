@@ -4,6 +4,8 @@ import JournalEntryPage from './pages/JournalEntryPage';
 import TemplateManagementPage from './pages/TemplateManagementPage';
 import SettingsPage from './pages/SettingsPage';
 import { useInitialization } from './services/initializationService';
+import { useConflictResolution } from './hooks/useConflictResolution';
+import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 import './App.css';
 
 // Loading component while the app initializes
@@ -57,6 +59,7 @@ const ErrorScreen: React.FC<{ error: string; onRetry: () => void }> = ({
 
 function App() {
   const { isLoading, error, retry } = useInitialization();
+  const { isModalOpen, conflict, resolveConflict } = useConflictResolution();
 
   // Show loading screen while initializing
   if (isLoading) {
@@ -77,6 +80,15 @@ function App() {
           <Route path='/templates' element={<TemplateManagementPage />} />
           <Route path='/settings' element={<SettingsPage />} />
         </Routes>
+
+        {/* Conflict Resolution Modal */}
+        {isModalOpen && conflict && (
+          <ConflictResolutionModal
+            isOpen={isModalOpen}
+            conflict={conflict}
+            onResolve={resolveConflict}
+          />
+        )}
       </div>
     </BrowserRouter>
   );

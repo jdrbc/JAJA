@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ask questions to clarify requirements
+always get proposed changes approved before implementing
+run `npm run quality:fix`

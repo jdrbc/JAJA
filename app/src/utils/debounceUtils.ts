@@ -5,17 +5,38 @@ import debounce from 'lodash/debounce';
  *
  * @param saveFunction - The function to call for saving
  * @param delay - Debounce delay in milliseconds (default: 500)
+ * @param onPending - Optional callback to call immediately when save is triggered
+ * @param onComplete - Optional callback to call when save completes successfully
+ * @param onError - Optional callback to call when save fails
  * @returns A debounced save function
  */
 export const createDebouncedSave = <T extends any[]>(
   saveFunction: (...args: T) => Promise<void> | void,
-  delay: number = 500
+  delay: number = 500,
+  onPending?: () => void,
+  onComplete?: () => void,
+  onError?: (error: any) => void
 ) => {
-  return debounce(async (...args: T) => {
+  const debouncedFn = debounce(async (...args: T) => {
     try {
       await saveFunction(...args);
-    } catch (error) {}
+      if (onComplete) {
+        onComplete();
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error);
+      }
+    }
   }, delay);
+
+  // Return a wrapper that calls onPending immediately
+  return (...args: T) => {
+    if (onPending) {
+      onPending();
+    }
+    return debouncedFn(...args);
+  };
 };
 
 /**

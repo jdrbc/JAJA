@@ -565,6 +565,107 @@ class DatabaseService {
 
     logger.log('Database imported successfully');
   }
+
+  // Generate hash of user-entered data (excluding timestamps and auto-generated IDs)
+  async getContentHash(): Promise<string> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      // Collect all user-entered data in a consistent format
+      const contentData: any = {
+        journalEntries: [],
+        sections: [],
+        templateColumns: [],
+        templateSections: [],
+      };
+
+      // Get journal entries (only date, which is user-specified)
+      const entriesResult = this.db.exec(`
+        SELECT date FROM journal_entries ORDER BY date
+      `);
+      if (entriesResult.length > 0) {
+        contentData.journalEntries = entriesResult[0].values.map(
+          (row: any) => ({
+            date: row[0],
+          })
+        );
+      }
+
+      // Get sections content (user-entered content and type)
+      const sectionsResult = this.db.exec(`
+        SELECT je.date, s.type, s.content, s.refresh_frequency, s.content_type
+        FROM sections s
+        JOIN journal_entries je ON s.entry_id = je.id
+        ORDER BY je.date, s.type
+      `);
+      if (sectionsResult.length > 0) {
+        contentData.sections = sectionsResult[0].values.map((row: any) => ({
+          date: row[0],
+          type: row[1],
+          content: row[2],
+          refreshFrequency: row[3],
+          contentType: row[4],
+        }));
+      }
+
+      // Get template columns (user-defined structure)
+      const columnsResult = this.db.exec(`
+        SELECT title, width, display_order FROM template_columns ORDER BY display_order
+      `);
+      if (columnsResult.length > 0) {
+        contentData.templateColumns = columnsResult[0].values.map(
+          (row: any) => ({
+            title: row[0],
+            width: row[1],
+            displayOrder: row[2],
+          })
+        );
+      }
+
+      // Get template sections (user-defined template structure)
+      const templateSectionsResult = this.db.exec(`
+        SELECT ts.title, ts.refresh_frequency, ts.display_order, ts.placeholder, 
+               ts.default_content, ts.content_type, tc.title as column_title
+        FROM template_sections ts
+        LEFT JOIN template_columns tc ON ts.column_id = tc.id
+        ORDER BY ts.display_order
+      `);
+      if (templateSectionsResult.length > 0) {
+        contentData.templateSections = templateSectionsResult[0].values.map(
+          (row: any) => ({
+            title: row[0],
+            refreshFrequency: row[1],
+            displayOrder: row[2],
+            placeholder: row[3],
+            defaultContent: row[4],
+            contentType: row[5],
+            columnTitle: row[6],
+          })
+        );
+      }
+
+      // Convert to JSON string for consistent serialization
+      const dataString = JSON.stringify(contentData, null, 0);
+
+      // Generate SHA-256 hash
+      const encoder = new TextEncoder();
+      const data = encoder.encode(dataString);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+      // Convert to hex string
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      return hashHex;
+    } catch (error) {
+      logger.error('Failed to generate content hash:', error);
+      throw error;
+    }
+  }
 }
 
 const databaseService = new DatabaseService();

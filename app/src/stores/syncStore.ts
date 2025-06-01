@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { logger } from '../utils/logger';
 
-export type SyncStatus = 'idle' | 'syncing' | 'error';
+export type SyncStatus = 'idle' | 'pending' | 'syncing' | 'error';
 
 interface SyncState {
   status: SyncStatus;
@@ -9,6 +9,7 @@ interface SyncState {
   error: string | null;
 
   // Actions
+  setPending: () => void;
   startSync: () => void;
   completeSync: () => void;
   failSync: (error: string) => void;
@@ -19,6 +20,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   status: 'idle',
   lastSync: null,
   error: null,
+
+  setPending: () => {
+    logger.log('SYNC: Changes pending save');
+    set({
+      status: 'pending',
+      error: null,
+    });
+  },
 
   startSync: () => {
     logger.log('SYNC: Starting sync operation');
@@ -67,6 +76,8 @@ export const getSyncStatusText = (
   switch (status) {
     case 'idle':
       return 'All changes saved';
+    case 'pending':
+      return 'Saving changes...';
     case 'syncing':
       return 'Syncing...';
     case 'error':
@@ -80,6 +91,8 @@ export const getSyncStatusColor = (status: SyncStatus): string => {
   switch (status) {
     case 'idle':
       return 'text-green-600';
+    case 'pending':
+      return 'text-yellow-600';
     case 'syncing':
       return 'text-blue-600';
     case 'error':

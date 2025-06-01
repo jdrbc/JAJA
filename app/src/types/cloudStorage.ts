@@ -33,3 +33,16 @@ export interface CloudSyncStatus {
   syncInProgress: boolean;
   error: string | null;
 }
+
+export interface ConflictData {
+  localData: Uint8Array;
+  cloudData: Uint8Array;
+  localHash: string;
+  cloudHash: string;
+}
+
+export type ConflictResolution = 'use-local' | 'use-cloud' | 'cancel';
+
+export interface ConflictResolver {
+  (conflict: ConflictData): Promise<ConflictResolution>;
+}

@@ -1,6 +1,7 @@
 import { useSyncStore } from '../stores/syncStore';
 import { reactiveDataService } from './reactiveDataService';
 import { cloudStorageManager } from './cloudStorageManager';
+import { conflictResolutionService } from './conflictResolutionService';
 import { logger } from '../utils/logger';
 
 // Debounce utility
@@ -16,7 +17,6 @@ function debounce<T extends (...args: any[]) => any>(
 }
 
 class UnifiedSyncService {
-  private syncStore = useSyncStore.getState();
   private debouncedSync: () => void;
   private isInitialized = false;
 
@@ -29,10 +29,10 @@ class UnifiedSyncService {
 
     logger.log('UNIFIED_SYNC: Initializing unified sync service');
 
-    // Subscribe to sync store changes
-    useSyncStore.subscribe((state: any) => {
-      this.syncStore = state;
-    });
+    // Set up conflict resolver
+    cloudStorageManager.setConflictResolver(
+      conflictResolutionService.conflictResolver
+    );
 
     // Connect reactive data service
     reactiveDataService.setSyncService(this);
@@ -61,13 +61,16 @@ class UnifiedSyncService {
   }
 
   private async performSync() {
-    if (this.syncStore.status === 'syncing') {
+    const { status, startSync, completeSync, failSync } =
+      useSyncStore.getState();
+
+    if (status === 'syncing') {
       logger.log('UNIFIED_SYNC: Sync already in progress, skipping');
       return;
     }
 
     try {
-      this.syncStore.startSync();
+      startSync();
       logger.log('UNIFIED_SYNC: Starting sync operation');
 
       // Get database service for cloud sync
@@ -79,12 +82,12 @@ class UnifiedSyncService {
       // Perform cloud sync
       await cloudStorageManager.saveToCloud(databaseService);
 
-      this.syncStore.completeSync();
+      completeSync();
       logger.log('UNIFIED_SYNC: Sync completed successfully');
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown sync error';
-      this.syncStore.failSync(errorMessage);
+      failSync(errorMessage);
       logger.error('UNIFIED_SYNC: Sync failed:', error);
     }
   }

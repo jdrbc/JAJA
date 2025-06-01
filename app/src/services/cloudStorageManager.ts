@@ -2,6 +2,8 @@ import {
   CloudStorageProvider,
   CloudSyncSettings,
   CloudSyncStatus,
+  ConflictResolver,
+  ConflictData,
 } from '../types/cloudStorage';
 import { logger } from '../utils/logger';
 import { GoogleDriveAppDataProvider } from './providers/googleDriveProvider';
@@ -21,6 +23,7 @@ class CloudStorageManager {
 
   // Callbacks for UI updates
   private onStatusChange: ((status: CloudSyncStatus) => void) | null = null;
+  private conflictResolver: ConflictResolver | null = null;
   private hasInitializedFromSavedState = false;
   private isLoadingFromCloud = false;
   private initializationPromise: Promise<void> | null = null;
@@ -56,6 +59,10 @@ class CloudStorageManager {
 
   setStatusChangeCallback(callback: (status: CloudSyncStatus) => void): void {
     this.onStatusChange = callback;
+  }
+
+  setConflictResolver(resolver: ConflictResolver): void {
+    this.conflictResolver = resolver;
   }
 
   private updateStatus(updates: Partial<CloudSyncStatus>): void {
@@ -149,10 +156,8 @@ class CloudStorageManager {
       logger.log('CLOUD: Starting saveToCloud operation');
       this.updateStatus({ syncInProgress: true, error: null });
 
-      const dbData = databaseService.exportDatabase();
-
       // Calculate hash of current data
-      const currentDataHash = await this.calculateDataHash(dbData);
+      const currentDataHash = await databaseService.getContentHash();
 
       // Check if data has actually changed since last save
       if (
@@ -166,7 +171,16 @@ class CloudStorageManager {
         return;
       }
 
-      await this.activeProvider.saveData(dbData);
+      // Export database and append hash
+      const databaseData = databaseService.exportDatabase();
+      const hashBytes = new TextEncoder().encode(currentDataHash);
+      const dataWithHash = new Uint8Array(
+        databaseData.length + hashBytes.length
+      );
+      dataWithHash.set(databaseData, 0);
+      dataWithHash.set(hashBytes, databaseData.length);
+
+      await this.activeProvider.saveData(dataWithHash);
 
       // Update the hash after successful save
       this.lastSavedDataHash = currentDataHash;
@@ -205,29 +219,12 @@ class CloudStorageManager {
       this.isLoadingFromCloud = true;
       this.updateStatus({ syncInProgress: true, error: null });
 
-      const data = await this.activeProvider.loadData();
+      const cloudData = await this.activeProvider.loadData();
 
-      if (data) {
+      if (cloudData) {
         // Get database service from global window object
         const databaseService = (window as any).databaseService;
-        if (databaseService) {
-          logger.log('CLOUD: Importing database from cloud data');
-          await databaseService.importDatabase(data);
-
-          // Update hash after loading from cloud to prevent immediate re-save
-          this.lastSavedDataHash = await this.calculateDataHash(data);
-
-          this.updateStatus({
-            lastSync: new Date(),
-            syncInProgress: false,
-            error: null,
-          });
-
-          this.saveStatus();
-
-          logger.log('Data loaded from cloud successfully');
-          return true;
-        } else {
+        if (!databaseService) {
           logger.error('Database service not available');
           this.updateStatus({
             syncInProgress: false,
@@ -235,6 +232,108 @@ class CloudStorageManager {
           });
           return false;
         }
+
+        // Extract hash from cloud data (last 64 characters)
+        if (cloudData.length < 64) {
+          logger.error(
+            'CLOUD: Invalid cloud data format - too short to contain hash'
+          );
+          this.updateStatus({
+            syncInProgress: false,
+            error: 'Invalid cloud data format',
+          });
+          return false;
+        }
+
+        // Separate database data and hash
+        const cloudDatabaseData = cloudData.slice(0, cloudData.length - 64);
+        const cloudHashBytes = cloudData.slice(cloudData.length - 64);
+        const cloudHash = new TextDecoder().decode(cloudHashBytes);
+
+        // Get current local data for comparison
+        const localData = databaseService.exportDatabase();
+        const localHash = await databaseService.getContentHash();
+
+        // Check if there's a conflict
+        if (localHash !== cloudHash) {
+          logger.log(
+            'CLOUD: Data conflict detected - local and cloud hashes differ'
+          );
+
+          // If we have a conflict resolver, use it
+          if (this.conflictResolver) {
+            const conflictData: ConflictData = {
+              localData,
+              cloudData: cloudDatabaseData,
+              localHash,
+              cloudHash,
+            };
+
+            try {
+              const resolution = await this.conflictResolver(conflictData);
+
+              switch (resolution) {
+                case 'use-local':
+                  logger.log('CLOUD: User chose to keep local data');
+                  // Save local data to cloud to resolve conflict
+                  const localDataHash = await databaseService.getContentHash();
+                  const localHashBytes = new TextEncoder().encode(
+                    localDataHash
+                  );
+                  const localDataWithHash = new Uint8Array(
+                    localData.length + localHashBytes.length
+                  );
+                  localDataWithHash.set(localData, 0);
+                  localDataWithHash.set(localHashBytes, localData.length);
+                  await this.activeProvider.saveData(localDataWithHash);
+                  this.lastSavedDataHash = localHash;
+                  break;
+
+                case 'use-cloud':
+                  logger.log('CLOUD: User chose to keep cloud data');
+                  // Import cloud data
+                  await databaseService.importDatabase(cloudDatabaseData);
+                  this.lastSavedDataHash = cloudHash;
+                  // reload with new state
+                  window.location.reload();
+                  break;
+
+                case 'cancel':
+                  logger.log('CLOUD: User cancelled conflict resolution');
+                  this.updateStatus({ syncInProgress: false, error: null });
+                  return false;
+              }
+            } catch (error) {
+              logger.error('Conflict resolution failed:', error);
+              this.updateStatus({
+                syncInProgress: false,
+                error: 'Conflict resolution failed',
+              });
+              return false;
+            }
+          } else {
+            // No conflict resolver set - default to cloud data (original behavior)
+            logger.log(
+              'CLOUD: No conflict resolver set, using cloud data by default'
+            );
+            await databaseService.importDatabase(cloudDatabaseData);
+            this.lastSavedDataHash = cloudHash;
+          }
+        } else {
+          // No conflict - data is the same
+          logger.log('CLOUD: No conflict detected, data is already in sync');
+          this.lastSavedDataHash = cloudHash;
+        }
+
+        this.updateStatus({
+          lastSync: new Date(),
+          syncInProgress: false,
+          error: null,
+        });
+
+        this.saveStatus();
+        logger.log('Data loaded from cloud successfully');
+        return true;
       } else {
         // No data in cloud, continue with local data
         this.updateStatus({ syncInProgress: false, error: null });
@@ -346,16 +445,6 @@ class CloudStorageManager {
     } else {
       logger.log('CLOUD: No saved provider found or provider not available');
     }
-  }
-
-  // Calculate SHA-256 hash of data for comparison
-  private async calculateDataHash(data: any): Promise<string> {
-    const dataString = JSON.stringify(data);
-    const encoder = new TextEncoder();
-    const dataBytes = encoder.encode(dataString);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBytes);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 }
 

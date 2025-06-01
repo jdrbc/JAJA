@@ -35,11 +35,3 @@
   [headers.values]
     # Cache static assets for 1 year with immutable flag
     Cache-Control = "public, max-age=31536000, immutable"
-
-# Enable Cross-Origin Embedder Policy for SQLite WASM if needed
-[[headers]]
-  for = "/*"
-  [headers.values]
-    # These headers may be needed for SQLite WASM to work properly
-    Cross-Origin-Embedder-Policy = "require-corp"
-    Cross-Origin-Opener-Policy = "same-origin" 

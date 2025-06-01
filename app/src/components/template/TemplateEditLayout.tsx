@@ -196,7 +196,12 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
         ref={setNodeRef}
         className={columnClasses}
         data-column-id={column.id}
-        style={{ width: `${column.width}px`, ...style }}
+        style={{
+          width: 'auto',
+          minWidth: '280px',
+          maxWidth: '400px',
+          ...style,
+        }}
         title='Drag to reorder column'
         {...attributes}
         {...listeners}

@@ -1,16 +1,6 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { logger } from '../utils/logger';
 
-// todo this seems weird
-// Import cloud storage manager for auto-sync
-let cloudStorageManager: any = null;
-try {
-  // Dynamic import to avoid circular dependencies
-  cloudStorageManager = require('./cloudStorageManager').cloudStorageManager;
-} catch (error) {
-  logger.log('Cloud storage manager not available');
-}
-
 export interface DatabaseConnection {
   db: any;
   exec: (sql: string) => any;
@@ -22,12 +12,24 @@ class DatabaseService {
   private sqlite3: any = null;
   private db: any = null;
   private isInitialized = false;
+  private isInitializing = false;
   private readonly DB_NAME = 'journal-app-db';
   private readonly DB_STORE_NAME = 'database';
   private readonly DB_KEY = 'journal.db';
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
+
+    // Prevent multiple concurrent initialization attempts
+    if (this.isInitializing) {
+      // Wait for ongoing initialization to complete
+      while (this.isInitializing) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      return;
+    }
+
+    this.isInitializing = true;
 
     try {
       logger.log('Initializing SQLite WASM...');
@@ -38,59 +40,60 @@ class DatabaseService {
 
       logger.log('SQLite WASM initialized successfully');
 
-      // Try to restore database from IndexedDB first
-      const restoredData = await this.loadDatabaseFromIndexedDB();
+      // Try to restore database from IndexedDB
+      logger.log('Restoring database from IndexedDB...');
+      const savedData = await this.loadDatabaseFromIndexedDB();
 
-      if (restoredData) {
-        logger.log('Restoring database from IndexedDB...');
+      if (savedData) {
+        // Restore from saved data
         this.db = new this.sqlite3.oo1.DB(':memory:');
-        // Allocate WASM memory for the data
-        const pData = this.sqlite3.wasm.alloc(restoredData.length);
+        const pData = this.sqlite3.wasm.alloc(savedData.length);
         try {
-          // Copy data to WASM memory
-          this.sqlite3.wasm.heap8u().set(restoredData, pData);
-          // Use sqlite3_deserialize to restore the database
+          this.sqlite3.wasm.heap8u().set(savedData, pData);
           const rc = this.sqlite3.capi.sqlite3_deserialize(
             this.db.pointer,
             'main',
             pData,
-            restoredData.length,
-            restoredData.length,
+            savedData.length,
+            savedData.length,
             this.sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
               this.sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
           );
           if (rc !== this.sqlite3.capi.SQLITE_OK) {
             throw new Error(`Failed to deserialize database: ${rc}`);
           }
-          // Don't free pData here - sqlite3_deserialize takes ownership when FREEONCLOSE is used
         } catch (error) {
-          // Free memory on error
           this.sqlite3.wasm.dealloc(pData);
           throw error;
         }
         logger.log('Database restored from IndexedDB successfully');
       } else {
-        logger.log('No existing database found, creating new one...');
-        // Create database in memory
+        // Create new database
         this.db = new this.sqlite3.oo1.DB(':memory:');
-
-        // Initialize schema for new database
-        await this.initializeSchema();
+        await this.runMigrations();
+        logger.log('New database created');
       }
 
-      // Set up auto-save mechanism
+      // Set up auto-save after database is ready
       this.setupAutoSave();
 
       this.isInitialized = true;
       logger.log('Database service initialized');
+
+      // Clear startup flag after a short delay
+      setTimeout(() => {
+        logger.log('Database startup phase complete');
+      }, 2000);
     } catch (error) {
       logger.error('Failed to initialize database:', error);
       throw error;
+    } finally {
+      this.isInitializing = false;
     }
   }
 
   private async loadDatabaseFromIndexedDB(): Promise<Uint8Array | null> {
-    return new Promise((resolve, reject) => {
+    return new Promise(resolve => {
       const request = indexedDB.open(this.DB_NAME, 1);
 
       request.onerror = () => {
@@ -220,8 +223,6 @@ class DatabaseService {
 
         stmt.step = () => {
           const result = originalStep();
-          // For modifying statements, trigger save regardless of return value
-          // because step() can return false for successful UPDATE/INSERT/DELETE operations
           hasChanges = true;
           logger.log('Database change detected, scheduling auto-save...');
           this.scheduleAutoSave();
@@ -244,11 +245,6 @@ class DatabaseService {
             await this.saveDatabaseToIndexedDB();
             hasChanges = false;
             logger.log('Auto-save completed successfully');
-
-            // Trigger cloud storage sync if available
-            if (cloudStorageManager) {
-              cloudStorageManager.onDatabaseChange(this);
-            }
           } catch (error) {
             logger.error('Auto-save failed:', error);
           }
@@ -331,13 +327,8 @@ class DatabaseService {
 
     try {
       this.db.exec(schema);
+      await this.insertDefaultTemplate();
       logger.log('Database schema initialized');
-
-      // Run migrations for existing databases
-      await this.runMigrations();
-
-      // Initialize with default template if no templates exist
-      await this.initializeDefaultTemplate();
     } catch (error) {
       logger.error('Failed to initialize schema:', error);
       throw error;
@@ -376,18 +367,10 @@ class DatabaseService {
 
           while (stmt.step()) {
             const row = stmt.get({});
-            let width = 500; // default
-
-            if (row.width) {
-              // Try to parse as number, handle percentage strings
-              const widthStr = row.width.toString();
-              if (widthStr.includes('%')) {
-                // Convert percentage to pixels (assuming 50% = 500px)
-                const percentage = parseInt(widthStr.replace('%', ''));
-                width = percentage * 10; // 50% -> 500px
-              } else {
-                width = parseInt(widthStr) || 500;
-              }
+            // Convert width to integer, default to 400 if invalid
+            let width = parseInt(row.width);
+            if (isNaN(width)) {
+              width = 400;
             }
 
             insertStmt.bind([
@@ -405,69 +388,95 @@ class DatabaseService {
           stmt.finalize();
           insertStmt.finalize();
 
-          // Replace the old table
-          this.db.exec(`
-            DROP TABLE template_columns;
-            ALTER TABLE template_columns_new RENAME TO template_columns;
-          `);
+          // Drop old table and rename new one
+          this.db.exec('DROP TABLE template_columns');
+          this.db.exec(
+            'ALTER TABLE template_columns_new RENAME TO template_columns'
+          );
 
           logger.log('Width column migration completed');
         }
       }
+
+      // Always create schema (will use IF NOT EXISTS)
+      await this.initializeSchema();
     } catch (error) {
-      logger.error('Migration failed:', error);
-      // Don't throw here, let the app continue with the new schema
-    }
-  }
-
-  private async initializeDefaultTemplate(): Promise<void> {
-    // Check if templates already exist
-    const columnCount = this.db.selectValue(
-      'SELECT COUNT(*) FROM template_columns'
-    );
-    if (columnCount > 0) {
-      logger.log('Templates already exist, skipping default initialization');
-      return;
-    }
-
-    logger.log('Initializing default template...');
-
-    // Default template based on typical journal structure
-    const defaultTemplate = `
-      -- Default columns
-      INSERT INTO template_columns (id, title, width, display_order) VALUES
-      ('left', 'Reflection', 500, 1),
-      ('right', 'Planning', 500, 2);
-
-      -- Default sections
-      INSERT INTO template_sections (id, title, refresh_frequency, display_order, placeholder, default_content, content_type, column_id) VALUES
-      ('journal', 'Daily Journal', 'daily', 1, 'How was your day? What happened?', '', 'text', 'left'),
-      ('gratitude', 'Gratitude', 'daily', 2, 'What are you grateful for today?', '', 'text', 'left'),
-      ('monthly_theme', 'Monthly Theme', 'monthly', 3, 'What is your focus this month?', '', 'text', 'left'),
-      ('weekly_goals', 'Weekly Goals', 'weekly', 1, 'What do you want to accomplish this week?', '', 'todo', 'right'),
-      ('tomorrow', 'Tomorrow''s Plan', 'daily', 2, 'What will you do tomorrow?', '', 'todo', 'right'),
-      ('notes', 'Notes & Ideas', 'daily', 3, 'Random thoughts, ideas, reminders...', '', 'text', 'right');
-    `;
-
-    try {
-      this.db.exec(defaultTemplate);
-      logger.log('Default template initialized successfully');
-    } catch (error) {
-      logger.error('Failed to initialize default template:', error);
+      logger.error('Failed to run migrations:', error);
       throw error;
     }
   }
 
-  getConnection(): DatabaseConnection {
+  private async insertDefaultTemplate(): Promise<void> {
+    try {
+      // Check if template already exists
+      const existingColumns = this.db.exec(
+        'SELECT COUNT(*) as count FROM template_columns'
+      );
+      const columnCount =
+        existingColumns.length > 0 ? existingColumns[0].values[0][0] : 0;
+
+      if (columnCount > 0) {
+        logger.log(
+          'Template already exists, skipping default template creation'
+        );
+        return;
+      }
+
+      logger.log('Creating default template...');
+
+      // Create default column
+      const defaultColumnId = 'column-1';
+      this.db.exec(`
+        INSERT INTO template_columns (id, title, width, display_order)
+        VALUES ('${defaultColumnId}', 'Main', 600, 1)
+      `);
+
+      // Create default sections
+      const defaultSections = [
+        {
+          id: 'section-gratitude',
+          title: 'Gratitude',
+          order: 1,
+          placeholder: 'What are you grateful for today?',
+        },
+        {
+          id: 'section-reflection',
+          title: 'Daily Reflection',
+          order: 2,
+          placeholder: 'How was your day? What did you learn?',
+        },
+        {
+          id: 'section-goals',
+          title: 'Goals & Tasks',
+          order: 3,
+          placeholder: 'What do you want to accomplish?',
+        },
+      ];
+
+      for (const section of defaultSections) {
+        this.db.exec(`
+          INSERT INTO template_sections (id, title, display_order, placeholder, column_id)
+          VALUES ('${section.id}', '${section.title}', ${section.order}, '${section.placeholder}', '${defaultColumnId}')
+        `);
+      }
+
+      logger.log('Default template created successfully');
+    } catch (error) {
+      logger.error('Failed to create default template:', error);
+      throw error;
+    }
+  }
+
+  getConnection(): DatabaseConnection | null {
     if (!this.isInitialized || !this.db) {
-      throw new Error('Database not initialized. Call initialize() first.');
+      return null;
     }
 
     return {
       db: this.db,
-      exec: (sql: string) => this.db.exec(sql),
-      prepare: (sql: string) => this.db.prepare(sql),
-      close: () => this.db.close(),
+      exec: this.db.exec.bind(this.db),
+      prepare: this.db.prepare.bind(this.db),
+      close: this.db.close.bind(this.db),
     };
   }
 
@@ -515,6 +524,8 @@ class DatabaseService {
 
   // Import database from backup
   async importDatabase(data: Uint8Array): Promise<void> {
+    logger.log('Starting database import...');
+
     if (this.db) {
       this.db.close();
     }
@@ -545,16 +556,17 @@ class DatabaseService {
       throw error;
     }
 
-    // Set up auto-save for the imported database
+    // Set up auto-save for the imported database - but don't trigger immediate save
     this.setupAutoSave();
 
     // Save the imported database to IndexedDB
+    logger.log('Saving imported database to IndexedDB...');
     await this.saveDatabaseToIndexedDB();
 
     logger.log('Database imported successfully');
   }
 }
 
-// Singleton instance
-export const databaseService = new DatabaseService();
+const databaseService = new DatabaseService();
+
 export default databaseService;

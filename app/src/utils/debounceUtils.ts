@@ -65,14 +65,3 @@ export const createDebouncedEntrySaveWithCallback = (
     }
   }, 1000);
 };
-
-/**
- * Creates a debounced save function for cloud storage
- */
-export const createDebouncedCloudSave = (
-  saveFunction: (databaseService: any) => Promise<void>
-) => {
-  return createDebouncedSave((databaseService: any) => {
-    return saveFunction(databaseService);
-  }, 2000);
-};

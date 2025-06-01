@@ -1,14 +1,14 @@
 import React from 'react';
-import { useCloudStorage } from '../hooks/useCloudStorage';
+import { useSync } from '../services/unifiedSyncService';
 
 interface CloudSyncIndicatorProps {
   onClick?: () => void;
 }
 
 export function CloudSyncIndicator({ onClick }: CloudSyncIndicatorProps) {
-  const { isConnected, activeProvider } = useCloudStorage();
+  const { isCloudEnabled, activeProvider } = useSync();
 
-  if (!isConnected) {
+  if (!isCloudEnabled) {
     return (
       <button
         onClick={onClick}

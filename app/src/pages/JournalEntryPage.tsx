@@ -6,36 +6,21 @@ import JournalHeader from '../components/layout/JournalHeader';
 import { SaveIndicator } from '../components/SaveIndicator';
 
 import {
-  JournalEntry,
   SectionTemplate,
   SectionWithContent,
-  Column,
+  JournalEntry,
 } from '../services/api';
-import localApiService from '../services/localApi';
 import { formatDateForAPI } from '../utils/dates';
 import { logger } from '../utils/logger';
-import { createDebouncedEntrySaveWithCallback } from '../utils/debounceUtils';
-import { useSaveStatus } from '../hooks/useSaveStatus';
+import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
+import { createDebouncedSave } from '../utils/debounceUtils';
 
 const JournalEntryPage: React.FC = () => {
-  const [entry, setEntry] = useState<JournalEntry | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [templates, setTemplates] = useState<SectionTemplate[]>([]);
-  const [columns, setColumns] = useState<Column[]>([]);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+  // Local state to store immediate changes without triggering re-renders
+  const [localEntry, setLocalEntry] = useState<JournalEntry | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
-  // Save status hook
-  const {
-    status,
-    statusText,
-    statusColor,
-    markPending,
-    markLocalSaved,
-    markError,
-  } = useSaveStatus();
 
   // Get current date from URL or default to today
   const getCurrentDateFromUrl = useCallback((): Date => {
@@ -58,6 +43,30 @@ const JournalEntryPage: React.FC = () => {
     () => getCurrentDateFromUrl(),
     [getCurrentDateFromUrl]
   );
+
+  // Use reactive hooks for data
+  const formattedDate = formatDateForAPI(currentDate);
+  const {
+    entry,
+    loading: isLoading,
+    error,
+    updateEntry,
+  } = useJournalEntry(formattedDate);
+  const { templates, columns } = useTemplates();
+
+  // Create debounced save function
+  const debouncedSave = useMemo(() => {
+    return createDebouncedSave(async (entryData: JournalEntry) => {
+      await updateEntry(entryData);
+    }, 1000);
+  }, [updateEntry]);
+
+  // Update local state when entry changes from reactive service
+  useEffect(() => {
+    if (entry) {
+      setLocalEntry(entry);
+    }
+  }, [entry]);
 
   // Update document title when date changes
   useEffect(() => {
@@ -90,111 +99,57 @@ const JournalEntryPage: React.FC = () => {
     return isSameDay(currentDate, today);
   };
 
-  // Fetch section templates from local API
-  const loadTemplates = useCallback(async () => {
-    try {
-      const templateConfig = await localApiService.fetchTemplates();
-      setTemplates(templateConfig.sections);
-      setColumns(
-        templateConfig.columns.sort((a, b) => a.display_order - b.display_order)
-      );
-    } catch (err) {
-      setError(
-        'Failed to load section templates. Some features may be limited.'
-      );
-      logger.error(err);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadTemplates();
-  }, [loadTemplates]);
-
-  // Load entry when date changes
-  useEffect(() => {
-    const loadEntry = async () => {
-      setIsLoading(true);
-      try {
-        const formattedDate = formatDateForAPI(currentDate);
-        const fetchedEntry =
-          await localApiService.fetchEntryByDate(formattedDate);
-
-        if (fetchedEntry) {
-          setEntry(fetchedEntry);
-        } else {
-          // Create an empty entry structure
-          setEntry({
-            date: formattedDate,
-            sections: {},
-          });
-        }
-
-        setError(null);
-      } catch (err) {
-        setError('Failed to load journal entry. Please try again.');
-        logger.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadEntry();
-  }, [currentDate]);
-
-  // Debounced save function with completion callbacks
-  const debouncedSave = useCallback(() => {
-    return createDebouncedEntrySaveWithCallback(
-      (date: string, entry: any) => {
-        return localApiService.updateEntry(date, entry);
-      },
-      markLocalSaved, // onComplete
-      markError // onError
-    );
-  }, [markLocalSaved, markError]);
-
-  // Handle section content changes
+  // Handle section content changes with immediate local state update and debounced save
   const handleSectionChange = (sectionId: string, content: string) => {
-    if (!entry) return;
+    if (!localEntry) return;
 
     const updatedEntry = {
-      ...entry,
+      ...localEntry,
       sections: {
-        ...entry.sections,
+        ...localEntry.sections,
         [sectionId]: {
-          ...entry.sections[sectionId],
+          ...localEntry.sections[sectionId],
           content,
         },
       },
     };
 
-    setEntry(updatedEntry);
-    markPending(); // Mark that changes are pending
-    debouncedSave()(updatedEntry);
+    // Update local state immediately for responsive UI
+    setLocalEntry(updatedEntry);
+
+    // Save to database with debounce
+    debouncedSave(updatedEntry);
   };
 
   // Convert entry sections to SectionWithContent format for ColumnLayout
   const getSections = (): SectionWithContent[] => {
-    if (!entry || !templates.length) return [];
+    // Use localEntry instead of entry for immediate updates
+    if (!localEntry || !templates.length) return [];
 
     return templates
-      .map(template => {
-        const sectionData = entry.sections[template.id];
+      .map((template: SectionTemplate) => {
+        const sectionData = localEntry.sections[template.id];
         return {
           ...template,
           content: sectionData?.content || '',
         };
       })
-      .sort((a, b) => a.display_order - b.display_order);
+      .sort(
+        (a: SectionWithContent, b: SectionWithContent) =>
+          a.display_order - b.display_order
+      );
   };
 
   // Copy entry content to clipboard
   const copyToClipboard = async () => {
-    if (!entry) return;
+    if (!localEntry) return;
 
     try {
-      const entryText = Object.entries(entry.sections)
+      const entryText = Object.entries(localEntry.sections)
         .map(([sectionId, section]) => {
-          const template = templates.find(t => t.id === sectionId);
+          const template = templates.find(
+            (t: SectionTemplate) => t.id === sectionId
+          );
           const title = template?.title || sectionId;
           return `${title}:\n${section.content}\n`;
         })
@@ -243,14 +198,11 @@ const JournalEntryPage: React.FC = () => {
         isCurrentDayToday={isCurrentDayToday}
         copyStatus={copyStatus}
         onCopyToClipboard={copyToClipboard}
-        saveStatus={status}
-        saveStatusText={statusText}
-        saveStatusColor={statusColor}
       />
 
-      {entry && (
+      {localEntry && (
         <ColumnLayout
-          entry={entry}
+          entry={localEntry}
           sections={getSections()}
           columns={columns}
           onContentChange={handleSectionChange}
@@ -258,12 +210,7 @@ const JournalEntryPage: React.FC = () => {
       )}
 
       {/* Mobile floating save indicator */}
-      <SaveIndicator
-        status={status}
-        statusText={statusText}
-        statusColor={statusColor}
-        variant='mobile'
-      />
+      <SaveIndicator variant='mobile' />
     </div>
   );
 };

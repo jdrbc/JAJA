@@ -18,7 +18,7 @@ export class LocalApiService {
     sections: SectionTemplate[];
   }> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       // Fetch columns
@@ -71,7 +71,7 @@ export class LocalApiService {
   async fetchEntryByDate(date: string): Promise<JournalEntry | null> {
     logger.log(`fetchEntryByDate called for date: ${date}`);
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       // Get entry
@@ -181,7 +181,7 @@ export class LocalApiService {
     }
 
     try {
-      const db = databaseService.getConnection();
+      const db = databaseService.getConnection()!;
       const date = new Date(entryDate);
       let startDate: string;
 
@@ -235,7 +235,7 @@ export class LocalApiService {
 
   async updateEntry(date: string, entry: JournalEntry): Promise<JournalEntry> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       db.exec('BEGIN TRANSACTION');
@@ -327,7 +327,7 @@ export class LocalApiService {
 
   async deleteEntry(date: string): Promise<void> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const stmt = db.prepare('DELETE FROM journal_entries WHERE date = ?');
@@ -343,7 +343,7 @@ export class LocalApiService {
   // Template CRUD operations
   async createTemplateColumn(columnData: Column): Promise<Column> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const stmt = db.prepare(`
@@ -371,7 +371,7 @@ export class LocalApiService {
     columnData: Partial<Column>
   ): Promise<Column> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const updates: string[] = [];
@@ -426,7 +426,7 @@ export class LocalApiService {
 
   async deleteTemplateColumn(id: string): Promise<void> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const stmt = db.prepare('DELETE FROM template_columns WHERE id = ?');
@@ -443,7 +443,7 @@ export class LocalApiService {
     columns: Array<{ id: string; display_order: number }>
   ): Promise<void> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       db.exec('BEGIN TRANSACTION');
@@ -471,7 +471,7 @@ export class LocalApiService {
     sections: Array<{ id: string; display_order: number }>
   ): Promise<void> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       db.exec('BEGIN TRANSACTION');
@@ -499,7 +499,7 @@ export class LocalApiService {
     sectionData: SectionTemplate
   ): Promise<SectionTemplate> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const stmt = db.prepare(`
@@ -531,7 +531,7 @@ export class LocalApiService {
     sectionData: Partial<SectionTemplate>
   ): Promise<SectionTemplate> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const updates: string[] = [];
@@ -603,7 +603,7 @@ export class LocalApiService {
 
   async deleteTemplateSection(id: string): Promise<void> {
     await this.ensureInitialized();
-    const db = databaseService.getConnection();
+    const db = databaseService.getConnection()!;
 
     try {
       const stmt = db.prepare('DELETE FROM template_sections WHERE id = ?');

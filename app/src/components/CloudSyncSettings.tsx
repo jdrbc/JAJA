@@ -1,26 +1,36 @@
-import React from 'react';
-import { useCloudStorage } from '../hooks/useCloudStorage';
+import React, { useState } from 'react';
+import { useSync } from '../services/unifiedSyncService';
 import { logger } from '../utils/logger';
 
 export function CloudSyncSettings() {
+  const [loading, setLoading] = useState(false);
   const {
     providers,
-    loading,
     activeProvider,
+    isCloudEnabled,
     connectProvider,
-    disconnect,
-    isConnected,
-  } = useCloudStorage();
+    disconnectProvider,
+  } = useSync();
 
   const handleConnect = async (providerName: string) => {
-    await connectProvider(providerName);
+    setLoading(true);
+    try {
+      await connectProvider(providerName);
+    } catch (error) {
+      logger.error('Connect failed:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDisconnect = async () => {
+    setLoading(true);
     try {
-      await disconnect();
+      await disconnectProvider();
     } catch (error) {
       logger.error('Disconnect failed:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,7 +47,7 @@ export function CloudSyncSettings() {
       </div>
 
       {/* Connection Status */}
-      {isConnected && activeProvider && (
+      {isCloudEnabled && activeProvider && (
         <div className='bg-green-50 border border-green-200 rounded-lg p-4'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center space-x-3'>
@@ -61,7 +71,7 @@ export function CloudSyncSettings() {
       )}
 
       {/* Connection Options */}
-      {!isConnected && (
+      {!isCloudEnabled && (
         <div>
           <h3 className='text-lg font-semibold text-gray-800 mb-4'>
             Choose a Cloud Provider
@@ -100,14 +110,18 @@ export function CloudSyncSettings() {
 
       {/* Info Section */}
       <div className='bg-blue-50 border border-blue-200 rounded-lg p-4'>
-        <h3 className='font-medium text-blue-800 mb-2'>How it works</h3>
+        <h3 className='font-medium text-blue-800 mb-2'>Privacy & Security</h3>
         <ul className='text-sm text-blue-700 space-y-1'>
-          <li>• Your journal data syncs automatically when you make changes</li>
           <li>
-            • Data is stored in a private app folder (not visible in your Drive)
+            • Your journal data is encrypted and stored in your private app
+            folder
           </li>
-          <li>• Changes are saved within 2 seconds of editing</li>
-          <li>• Works offline - syncs when you reconnect</li>
+          <li>• No one else can access your data, including us</li>
+          <li>
+            • All sync operations happen directly between your device and cloud
+            storage
+          </li>
+          <li>• You can disconnect and delete your data at any time</li>
         </ul>
       </div>
     </div>

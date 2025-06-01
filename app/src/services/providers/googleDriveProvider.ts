@@ -39,48 +39,52 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
     }
 
     return new Promise((resolve, reject) => {
-      // Load Google Identity Services
-      const script = document.createElement('script');
+      // Check if Google API is already loaded
+      if (window.google?.accounts?.oauth2) {
+        this.setupTokenClient();
+        this.restoreSession();
+        this.isInitializedFlag = true;
+        logger.log(
+          'Google Drive provider initialized (using existing Google API)'
+        );
+        resolve();
+        return;
+      }
+
+      // Load Google Identity Services if not already loaded
+      let script = document.querySelector(
+        'script[src="https://accounts.google.com/gsi/client"]'
+      ) as HTMLScriptElement;
+
+      if (script) {
+        // Script already exists, wait for it to load
+        if (window.google?.accounts?.oauth2) {
+          this.setupTokenClient();
+          this.restoreSession();
+          this.isInitializedFlag = true;
+          logger.log(
+            'Google Drive provider initialized (script already loaded)'
+          );
+          resolve();
+        } else {
+          script.addEventListener('load', () => {
+            this.setupTokenClient();
+            this.restoreSession();
+            this.isInitializedFlag = true;
+            logger.log('Google Drive provider initialized');
+            resolve();
+          });
+        }
+        return;
+      }
+
+      // Create new script
+      script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.onload = () => {
         try {
-          // Initialize the token client
-          this.tokenClient = window.google.accounts.oauth2.initTokenClient({
-            client_id: this.CLIENT_ID,
-            scope: this.SCOPE,
-            callback: (response: TokenResponse) => {
-              if (response.access_token) {
-                this.accessToken = response.access_token;
-                // Store token with expiration info
-                const expirationTime = Date.now() + response.expires_in * 1000;
-                localStorage.setItem(
-                  'googleDriveAuth',
-                  JSON.stringify({
-                    access_token: response.access_token,
-                    expires_at: expirationTime,
-                  })
-                );
-                logger.log('Google Drive authentication successful');
-              }
-            },
-          });
-
-          // Try to restore existing session
-          const stored = localStorage.getItem('googleDriveAuth');
-          if (stored) {
-            try {
-              const authData = JSON.parse(stored);
-              if (authData.expires_at > Date.now()) {
-                this.accessToken = authData.access_token;
-                logger.log('Google Drive session restored');
-              } else {
-                localStorage.removeItem('googleDriveAuth');
-              }
-            } catch (e) {
-              localStorage.removeItem('googleDriveAuth');
-            }
-          }
-
+          this.setupTokenClient();
+          this.restoreSession();
           this.isInitializedFlag = true;
           logger.log('Google Drive provider initialized');
           resolve();
@@ -94,6 +98,51 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
       };
       document.head.appendChild(script);
     });
+  }
+
+  private setupTokenClient(): void {
+    // Initialize the token client
+    this.tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: this.CLIENT_ID,
+      scope: this.SCOPE,
+      callback: (response: TokenResponse) => {
+        if (response.access_token) {
+          this.accessToken = response.access_token;
+          // Store token with expiration info
+          const expirationTime = Date.now() + response.expires_in * 1000;
+          localStorage.setItem(
+            'googleDriveAuth',
+            JSON.stringify({
+              access_token: response.access_token,
+              expires_at: expirationTime,
+            })
+          );
+          logger.log('Google Drive authentication successful');
+        }
+      },
+    });
+  }
+
+  private restoreSession(): void {
+    // Try to restore existing session
+    const stored = localStorage.getItem('googleDriveAuth');
+    if (stored) {
+      try {
+        const authData = JSON.parse(stored);
+        if (authData.expires_at > Date.now()) {
+          this.accessToken = authData.access_token;
+          logger.log('Google Drive session restored');
+        } else {
+          logger.log('Google Drive session expired, removing token');
+          localStorage.removeItem('googleDriveAuth');
+        }
+      } catch (e) {
+        logger.log('Error parsing Google Drive auth data, removing token');
+        localStorage.removeItem('googleDriveAuth');
+      }
+    } else {
+      logger.log('No stored Google Drive session found');
+    }
   }
 
   isAuthenticated(): boolean {

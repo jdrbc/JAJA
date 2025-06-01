@@ -5,7 +5,6 @@ import {
 } from '../types/cloudStorage';
 import { logger } from '../utils/logger';
 import { GoogleDriveAppDataProvider } from './providers/googleDriveProvider';
-import { createDebouncedCloudSave } from '../utils/debounceUtils';
 
 class CloudStorageManager {
   private providers: Map<string, CloudStorageProvider> = new Map();
@@ -22,8 +21,12 @@ class CloudStorageManager {
 
   // Callbacks for UI updates
   private onStatusChange: ((status: CloudSyncStatus) => void) | null = null;
-  private onDataChange: (() => void) | null = null;
-  private debouncedCloudSave: ((databaseService: any) => void) | null = null;
+  private hasInitializedFromSavedState = false;
+  private isLoadingFromCloud = false;
+  private initializationPromise: Promise<void> | null = null;
+
+  // Hash tracking for defensive saves
+  private lastSavedDataHash: string | null = null;
 
   constructor() {
     this.registerProvider(new GoogleDriveAppDataProvider());
@@ -43,20 +46,28 @@ class CloudStorageManager {
     return this.activeProvider;
   }
 
-  getSettings(): CloudSyncSettings {
-    return { ...this.syncSettings };
-  }
-
   getStatus(): CloudSyncStatus {
     return { ...this.syncStatus };
+  }
+
+  getSettings(): CloudSyncSettings {
+    return { ...this.syncSettings };
   }
 
   setStatusChangeCallback(callback: (status: CloudSyncStatus) => void): void {
     this.onStatusChange = callback;
   }
 
-  setDataChangeCallback(callback: () => void): void {
-    this.onDataChange = callback;
+  private updateStatus(updates: Partial<CloudSyncStatus>): void {
+    this.syncStatus = { ...this.syncStatus, ...updates };
+    if (this.onStatusChange) {
+      this.onStatusChange(this.getStatus());
+    }
+  }
+
+  updateSettings(updates: Partial<CloudSyncSettings>): void {
+    this.syncSettings = { ...this.syncSettings, ...updates };
+    this.saveSettings();
   }
 
   async setActiveProvider(providerName: string): Promise<boolean> {
@@ -125,19 +136,40 @@ class CloudStorageManager {
 
   async saveToCloud(databaseService: any): Promise<void> {
     if (!this.activeProvider || !this.syncSettings.autoSync) {
+      logger.log('CLOUD: Skipping save - no provider or auto-sync disabled');
       return;
     }
 
     if (this.syncStatus.syncInProgress) {
-      logger.log('Sync already in progress, skipping');
+      logger.log('CLOUD: Sync already in progress, skipping save');
       return;
     }
 
     try {
+      logger.log('CLOUD: Starting saveToCloud operation');
       this.updateStatus({ syncInProgress: true, error: null });
 
       const dbData = databaseService.exportDatabase();
+
+      // Calculate hash of current data
+      const currentDataHash = await this.calculateDataHash(dbData);
+
+      // Check if data has actually changed since last save
+      if (
+        this.lastSavedDataHash &&
+        currentDataHash === this.lastSavedDataHash
+      ) {
+        logger.log(
+          'CLOUD: Data unchanged since last save, skipping cloud save'
+        );
+        this.updateStatus({ syncInProgress: false });
+        return;
+      }
+
       await this.activeProvider.saveData(dbData);
+
+      // Update the hash after successful save
+      this.lastSavedDataHash = currentDataHash;
 
       this.updateStatus({
         lastSync: new Date(),
@@ -162,7 +194,15 @@ class CloudStorageManager {
       return false;
     }
 
+    // Prevent concurrent load operations
+    if (this.isLoadingFromCloud) {
+      logger.log('CLOUD: Load already in progress, skipping duplicate request');
+      return false;
+    }
+
     try {
+      logger.log('CLOUD: Starting loadFromCloud operation');
+      this.isLoadingFromCloud = true;
       this.updateStatus({ syncInProgress: true, error: null });
 
       const data = await this.activeProvider.loadData();
@@ -171,7 +211,11 @@ class CloudStorageManager {
         // Get database service from global window object
         const databaseService = (window as any).databaseService;
         if (databaseService) {
+          logger.log('CLOUD: Importing database from cloud data');
           await databaseService.importDatabase(data);
+
+          // Update hash after loading from cloud to prevent immediate re-save
+          this.lastSavedDataHash = await this.calculateDataHash(data);
 
           this.updateStatus({
             lastSync: new Date(),
@@ -181,15 +225,15 @@ class CloudStorageManager {
 
           this.saveStatus();
 
-          // Notify listeners that data has changed
-          if (this.onDataChange) {
-            this.onDataChange();
-          }
-
           logger.log('Data loaded from cloud successfully');
           return true;
         } else {
-          throw new Error('Database service not available');
+          logger.error('Database service not available');
+          this.updateStatus({
+            syncInProgress: false,
+            error: 'Database service not available',
+          });
+          return false;
         }
       } else {
         // No data in cloud, continue with local data
@@ -198,24 +242,14 @@ class CloudStorageManager {
         return false;
       }
     } catch (error) {
+      logger.error('Failed to load from cloud:', error);
       this.updateStatus({
         syncInProgress: false,
         error: error instanceof Error ? error.message : 'Load failed',
       });
-      logger.error('Failed to load from cloud:', error);
       return false;
-    }
-  }
-
-  updateSettings(newSettings: Partial<CloudSyncSettings>): void {
-    this.syncSettings = { ...this.syncSettings, ...newSettings };
-    this.saveSettings();
-  }
-
-  private updateStatus(statusUpdate: Partial<CloudSyncStatus>): void {
-    this.syncStatus = { ...this.syncStatus, ...statusUpdate };
-    if (this.onStatusChange) {
-      this.onStatusChange(this.syncStatus);
+    } finally {
+      this.isLoadingFromCloud = false;
     }
   }
 
@@ -230,7 +264,7 @@ class CloudStorageManager {
     const saved = localStorage.getItem('cloudSyncSettings');
     if (saved) {
       try {
-        this.syncSettings = { ...this.syncSettings, ...JSON.parse(saved) };
+        this.syncSettings = JSON.parse(saved);
       } catch (error) {
         logger.error('Failed to load cloud sync settings:', error);
       }
@@ -261,6 +295,27 @@ class CloudStorageManager {
 
   // Initialize from saved state on app start
   async initializeFromSavedState(): Promise<void> {
+    if (this.hasInitializedFromSavedState) {
+      logger.log('CLOUD: Already initialized from saved state, skipping');
+      return;
+    }
+
+    // If initialization is already in progress, wait for it
+    if (this.initializationPromise) {
+      logger.log('CLOUD: Initialization already in progress, waiting...');
+      return this.initializationPromise;
+    }
+
+    logger.log('CLOUD: Initializing from saved state...');
+
+    this.initializationPromise = this._performInitialization();
+    await this.initializationPromise;
+    this.initializationPromise = null;
+  }
+
+  private async _performInitialization(): Promise<void> {
+    this.hasInitializedFromSavedState = true;
+
     const savedProvider = localStorage.getItem('activeCloudProvider');
     if (savedProvider && this.providers.has(savedProvider)) {
       const provider = this.providers.get(savedProvider)!;
@@ -272,27 +327,35 @@ class CloudStorageManager {
           this.updateStatus({ isConnected: true });
 
           // Load data from cloud on app startup
-          await this.loadFromCloud();
+          logger.log('CLOUD: Provider authenticated, loading data from cloud');
+          const loadSuccess = await this.loadFromCloud();
+
+          // Ensure sync status is properly reset after initialization
+          if (loadSuccess || !this.syncStatus.syncInProgress) {
+            this.updateStatus({ syncInProgress: false, error: null });
+          }
+        } else {
+          logger.log('CLOUD: Provider not authenticated, using local data');
         }
       } catch (error) {
         logger.error('Failed to restore cloud provider state:', error);
         localStorage.removeItem('activeCloudProvider');
+        // Ensure status is reset on error
+        this.updateStatus({ syncInProgress: false, error: null });
       }
+    } else {
+      logger.log('CLOUD: No saved provider found or provider not available');
     }
   }
 
-  // Called by database service when data changes
-  onDatabaseChange(databaseService: any): void {
-    if (this.syncSettings.autoSync && this.activeProvider) {
-      // Initialize debounced save if not already created
-      if (!this.debouncedCloudSave) {
-        this.debouncedCloudSave = createDebouncedCloudSave((dbService: any) =>
-          this.saveToCloud(dbService)
-        );
-      }
-
-      this.debouncedCloudSave(databaseService);
-    }
+  // Calculate SHA-256 hash of data for comparison
+  private async calculateDataHash(data: any): Promise<string> {
+    const dataString = JSON.stringify(data);
+    const encoder = new TextEncoder();
+    const dataBytes = encoder.encode(dataString);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 }
 

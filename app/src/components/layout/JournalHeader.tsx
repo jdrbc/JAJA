@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DateDisplay from '../DateDisplay';
 import { SaveIndicator } from '../SaveIndicator';
-import { SaveStatus } from '../../hooks/useSaveStatus';
-import { useCloudStorage } from '../../hooks/useCloudStorage';
 
 interface JournalHeaderProps {
   currentDate: Date;
@@ -12,69 +10,89 @@ interface JournalHeaderProps {
   isCurrentDayToday: () => boolean;
   copyStatus: 'idle' | 'copied';
   onCopyToClipboard: () => void;
-  saveStatus: SaveStatus;
-  saveStatusText: string;
-  saveStatusColor: string;
 }
 
-const JournalHeader: React.FC<JournalHeaderProps> = ({
+export default function JournalHeader({
   currentDate,
   onNavigateToNextDay,
   onNavigateToPreviousDay,
   isCurrentDayToday,
   copyStatus,
   onCopyToClipboard,
-  saveStatus,
-  saveStatusText,
-  saveStatusColor,
-}) => {
+}: JournalHeaderProps) {
+  const [showCopied, setShowCopied] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const navigate = useNavigate();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const { isConnected } = useCloudStorage();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const handleEditTemplate = () => {
-    navigate('/templates');
-    setIsMobileMenuOpen(false);
-  };
+  // Show copied message when status changes
+  useEffect(() => {
+    if (copyStatus === 'copied') {
+      setShowCopied(true);
+
+      // Clear existing timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // Hide after 2 seconds
+      timeoutRef.current = setTimeout(() => {
+        setShowCopied(false);
+      }, 2000);
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [copyStatus]);
+
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        mobileMenuRef.current &&
+        !mobileMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowMobileMenu(false);
+      }
+    };
+
+    if (showMobileMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMobileMenu]);
 
   const handleSettingsClick = () => {
     navigate('/settings');
-    setIsMobileMenuOpen(false);
+    setShowMobileMenu(false);
   };
 
-  const handleCloudSyncClick = () => {
-    navigate('/settings#cloud-sync');
-    setIsMobileMenuOpen(false);
+  const handleTemplateEditClick = () => {
+    navigate('/templates');
+    setShowMobileMenu(false);
   };
 
   const handleCopyClick = () => {
     onCopyToClipboard();
-    setIsMobileMenuOpen(false);
+    setShowMobileMenu(false);
   };
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsMobileMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+  const handleMobileMenuToggle = () => {
+    setShowMobileMenu(!showMobileMenu);
+  };
 
   return (
-    <header className='bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-20'>
-      <div className='flex items-center justify-between max-w-full'>
-        {/* Date Navigation */}
-        <div className='flex-1 min-w-0'>
+    <header className='relative bg-white border-b border-gray-200'>
+      <div className='flex justify-between items-center p-4'>
+        {/* Left side - Date Navigation */}
+        <div className='flex items-center gap-4'>
           <DateDisplay
             date={currentDate}
             onNextDay={onNavigateToNextDay}
@@ -83,118 +101,121 @@ const JournalHeader: React.FC<JournalHeaderProps> = ({
           />
         </div>
 
-        {/* Desktop Actions - Hidden on mobile */}
-        <div className='hidden lg:flex items-center space-x-2 flex-shrink-0'>
-          <SaveIndicator
-            status={saveStatus}
-            statusText={saveStatusText}
-            statusColor={saveStatusColor}
-          />
+        {/* Mobile Menu Button - shows on mobile only */}
+        <div className='flex items-center gap-3'>
+          {/* Desktop Save Status */}
+          <div className='hidden lg:block'>
+            <SaveIndicator variant='desktop' />
+          </div>
 
-          {!isConnected && (
-            <button
-              onClick={handleCloudSyncClick}
-              className='px-3 py-1 text-sm rounded-md border transition-colors bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200 whitespace-nowrap'
-            >
-              Connect Cloud
-            </button>
-          )}
-
+          {/* Mobile Menu Button */}
           <button
-            onClick={handleEditTemplate}
-            className='px-3 py-1 text-sm rounded-md border transition-colors bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200 whitespace-nowrap'
+            onClick={handleMobileMenuToggle}
+            className='lg:hidden flex items-center justify-center w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors'
+            title='Menu'
+            aria-label='Toggle menu'
           >
-            Edit Template
-          </button>
-
-          <button
-            onClick={onCopyToClipboard}
-            className={`px-3 py-1 text-sm rounded-md border transition-colors whitespace-nowrap ${
-              copyStatus === 'copied'
-                ? 'bg-green-100 text-green-700 border-green-300'
-                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-            }`}
-          >
-            {copyStatus === 'copied' ? 'Copied!' : 'Copy as Markdown'}
-          </button>
-
-          <button
-            onClick={handleSettingsClick}
-            className='px-3 py-1 text-sm rounded-md border transition-colors bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-            title='Settings'
-          >
-            ⚙️
-          </button>
-        </div>
-
-        {/* Mobile Menu Button - Hidden on desktop */}
-        <div className='lg:hidden relative flex-shrink-0' ref={dropdownRef}>
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className='p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500'
-            aria-label='Open menu'
-          >
-            <svg
-              className='w-5 h-5 text-gray-600'
-              fill='none'
-              stroke='currentColor'
-              viewBox='0 0 24 24'
-            >
-              <path
-                strokeLinecap='round'
-                strokeLinejoin='round'
-                strokeWidth={2}
-                d='M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z'
-              />
-            </svg>
-          </button>
-
-          {/* Mobile Dropdown Menu */}
-          {isMobileMenuOpen && (
-            <div className='absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30'>
-              <div className='py-2'>
-                {!isConnected && (
-                  <button
-                    onClick={handleCloudSyncClick}
-                    className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
-                  >
-                    <span className='mr-3'>☁️</span>
-                    Cloud Sync
-                  </button>
-                )}
-
-                <button
-                  onClick={handleEditTemplate}
-                  className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
-                >
-                  <span className='mr-3'>✏️</span>
-                  Edit Template
-                </button>
-
-                <button
-                  onClick={handleCopyClick}
-                  className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
-                >
-                  <span className='mr-3'>
-                    {copyStatus === 'copied' ? '✅' : '📋'}
-                  </span>
-                  {copyStatus === 'copied' ? 'Copied!' : 'Copy as Markdown'}
-                </button>
-
-                <button
-                  onClick={handleSettingsClick}
-                  className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
-                >
-                  <span className='mr-3'>⚙️</span>
-                  Settings
-                </button>
-              </div>
+            <div className='flex flex-col space-y-1'>
+              <div className='w-4 h-0.5 bg-gray-600'></div>
+              <div className='w-4 h-0.5 bg-gray-600'></div>
+              <div className='w-4 h-0.5 bg-gray-600'></div>
             </div>
-          )}
+          </button>
+
+          {/* Desktop Actions - hidden on mobile */}
+          <div className='hidden lg:flex items-center gap-3'>
+            {/* Copy Button */}
+            <button
+              onClick={onCopyToClipboard}
+              className='flex items-center gap-2 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm transition-colors'
+              title='Copy journal content to clipboard'
+            >
+              {showCopied ? (
+                <>
+                  <span>✓</span>
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <span>📋</span>
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+
+            {/* Edit Templates Button */}
+            <button
+              onClick={handleTemplateEditClick}
+              className='flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm transition-colors'
+              title='Edit journal templates and layout'
+            >
+              <span>📝</span>
+              <span>Edit Templates</span>
+            </button>
+
+            {/* Settings Button */}
+            <button
+              onClick={handleSettingsClick}
+              className='flex items-center gap-2 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm transition-colors'
+              title='Settings'
+            >
+              <span>⚙️</span>
+              <span>Settings</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Mobile Menu Dropdown */}
+      {showMobileMenu && (
+        <div
+          ref={mobileMenuRef}
+          className='lg:hidden absolute top-full right-4 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50'
+        >
+          <div className='py-2'>
+            {/* Mobile Save Status */}
+            <div className='px-4 py-2 border-b border-gray-100'>
+              <SaveIndicator variant='mobile' />
+            </div>
+
+            {/* Copy Button */}
+            <button
+              onClick={handleCopyClick}
+              className='w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors'
+            >
+              {showCopied ? (
+                <>
+                  <span className='text-lg'>✓</span>
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <span className='text-lg'>📋</span>
+                  <span>Copy Journal</span>
+                </>
+              )}
+            </button>
+
+            {/* Edit Templates Button */}
+            <button
+              onClick={handleTemplateEditClick}
+              className='w-full flex items-center gap-3 px-4 py-3 text-left text-blue-700 hover:bg-blue-50 transition-colors'
+            >
+              <span className='text-lg'>📝</span>
+              <span>Edit Templates</span>
+            </button>
+
+            {/* Settings Button */}
+            <button
+              onClick={handleSettingsClick}
+              className='w-full flex items-center gap-3 px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors'
+            >
+              <span className='text-lg'>⚙️</span>
+              <span>Settings</span>
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
-};
-
-export default JournalHeader;
+}

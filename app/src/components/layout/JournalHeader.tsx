@@ -40,6 +40,13 @@ export default function JournalHeader({
       timeoutRef.current = setTimeout(() => {
         setShowCopied(false);
       }, 2000);
+    } else if (copyStatus === 'idle') {
+      // Reset the copied state when status goes back to idle
+      setShowCopied(false);
+      // Clear any pending timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
     }
 
     return () => {

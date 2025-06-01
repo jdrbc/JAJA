@@ -45,6 +45,28 @@ export const createDebouncedEntrySave = (
 };
 
 /**
+ * Creates a debounced save function for journal entry updates with completion callback
+ */
+export const createDebouncedEntrySaveWithCallback = (
+  updateFunction: (date: string, entry: any) => Promise<any>,
+  onComplete?: () => void,
+  onError?: (error: any) => void
+) => {
+  return debounce(async (entry: any) => {
+    try {
+      await updateFunction(entry.date, entry);
+      if (onComplete) {
+        onComplete();
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error);
+      }
+    }
+  }, 1000);
+};
+
+/**
  * Creates a debounced save function for cloud storage
  */
 export const createDebouncedCloudSave = (

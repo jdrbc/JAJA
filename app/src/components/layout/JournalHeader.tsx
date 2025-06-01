@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DateDisplay from '../DateDisplay';
-import { CloudSyncIndicator } from '../CloudSyncIndicator';
-import databaseService from '../../services/database';
+import { SaveIndicator } from '../SaveIndicator';
+import { SaveStatus } from '../../hooks/useSaveStatus';
+import { useCloudStorage } from '../../hooks/useCloudStorage';
 
 interface JournalHeaderProps {
   currentDate: Date;
@@ -11,6 +12,9 @@ interface JournalHeaderProps {
   isCurrentDayToday: () => boolean;
   copyStatus: 'idle' | 'copied';
   onCopyToClipboard: () => void;
+  saveStatus: SaveStatus;
+  saveStatusText: string;
+  saveStatusColor: string;
 }
 
 const JournalHeader: React.FC<JournalHeaderProps> = ({
@@ -20,10 +24,14 @@ const JournalHeader: React.FC<JournalHeaderProps> = ({
   isCurrentDayToday,
   copyStatus,
   onCopyToClipboard,
+  saveStatus,
+  saveStatusText,
+  saveStatusColor,
 }) => {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { isConnected } = useCloudStorage();
 
   const handleEditTemplate = () => {
     navigate('/templates');
@@ -77,10 +85,20 @@ const JournalHeader: React.FC<JournalHeaderProps> = ({
 
         {/* Desktop Actions - Hidden on mobile */}
         <div className='hidden lg:flex items-center space-x-2 flex-shrink-0'>
-          <CloudSyncIndicator
-            databaseService={databaseService}
-            onClick={handleCloudSyncClick}
+          <SaveIndicator
+            status={saveStatus}
+            statusText={saveStatusText}
+            statusColor={saveStatusColor}
           />
+
+          {!isConnected && (
+            <button
+              onClick={handleCloudSyncClick}
+              className='px-3 py-1 text-sm rounded-md border transition-colors bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200 whitespace-nowrap'
+            >
+              Connect Cloud
+            </button>
+          )}
 
           <button
             onClick={handleEditTemplate}
@@ -135,13 +153,15 @@ const JournalHeader: React.FC<JournalHeaderProps> = ({
           {isMobileMenuOpen && (
             <div className='absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30'>
               <div className='py-2'>
-                <button
-                  onClick={handleCloudSyncClick}
-                  className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
-                >
-                  <span className='mr-3'>☁️</span>
-                  Cloud Sync
-                </button>
+                {!isConnected && (
+                  <button
+                    onClick={handleCloudSyncClick}
+                    className='flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100'
+                  >
+                    <span className='mr-3'>☁️</span>
+                    Cloud Sync
+                  </button>
+                )}
 
                 <button
                   onClick={handleEditTemplate}

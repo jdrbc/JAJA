@@ -10,9 +10,6 @@ export function CloudSyncSettings() {
     connectProvider,
     disconnect,
     isConnected,
-    syncInProgress,
-    lastSync,
-    error,
   } = useCloudStorage();
 
   const handleConnect = async (providerName: string) => {
@@ -49,36 +46,17 @@ export function CloudSyncSettings() {
                 <h3 className='font-medium text-green-800'>
                   Connected to {activeProvider.displayName}
                 </h3>
-                <p className='text-sm text-green-600'>
-                  {lastSync
-                    ? `Last synced: ${lastSync.toLocaleString()}`
-                    : 'Ready to sync'}
-                </p>
+                <p className='text-sm text-green-600'>Auto-sync is enabled</p>
               </div>
             </div>
             <button
               onClick={handleDisconnect}
-              disabled={loading || syncInProgress}
+              disabled={loading}
               className='px-4 py-2 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed'
             >
               Disconnect
             </button>
           </div>
-
-          {syncInProgress && (
-            <div className='mt-3 flex items-center space-x-2 text-sm text-green-600'>
-              <div className='w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin'></div>
-              <span>Syncing...</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Error Display */}
-      {error && (
-        <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-          <h3 className='font-medium text-red-800 mb-2'>Sync Error</h3>
-          <p className='text-sm text-red-600'>{error}</p>
         </div>
       )}
 

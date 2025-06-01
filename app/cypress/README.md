@@ -39,18 +39,3 @@ npm run test:e2e
 ```bash
 npm run cypress:open
 ```
-
-## Test Description
-
-The integration test (`journal.cy.js`) performs the following:
-
-1. Visits the Journal App homepage
-2. Verifies the page loaded correctly
-3. Enters text in both the journal and gratitude sections
-4. Saves the entry
-5. Verifies the save was successful
-6. Refreshes the page to verify persistence
-7. Confirms that the entered text was saved correctly
-
-This verifies the core functionality of the application while working with the
-actual backend.

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { addDays, isSameDay, parse, isValid, format } from 'date-fns';
 import ColumnLayout from '../components/layout/ColumnLayout';
 import JournalHeader from '../components/layout/JournalHeader';
+import { SaveIndicator } from '../components/SaveIndicator';
 
 import {
   JournalEntry,
@@ -13,7 +14,8 @@ import {
 import localApiService from '../services/localApi';
 import { formatDateForAPI } from '../utils/dates';
 import { logger } from '../utils/logger';
-import { createDebouncedEntrySave } from '../utils/debounceUtils';
+import { createDebouncedEntrySaveWithCallback } from '../utils/debounceUtils';
+import { useSaveStatus } from '../hooks/useSaveStatus';
 
 const JournalEntryPage: React.FC = () => {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
@@ -24,6 +26,16 @@ const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // Save status hook
+  const {
+    status,
+    statusText,
+    statusColor,
+    markPending,
+    markLocalSaved,
+    markError,
+  } = useSaveStatus();
 
   // Get current date from URL or default to today
   const getCurrentDateFromUrl = useCallback((): Date => {
@@ -129,12 +141,16 @@ const JournalEntryPage: React.FC = () => {
     loadEntry();
   }, [currentDate]);
 
-  // Debounced save function using utility
+  // Debounced save function with completion callbacks
   const debouncedSave = useCallback(() => {
-    return createDebouncedEntrySave((date: string, entry: any) => {
-      return localApiService.updateEntry(date, entry);
-    });
-  }, []);
+    return createDebouncedEntrySaveWithCallback(
+      (date: string, entry: any) => {
+        return localApiService.updateEntry(date, entry);
+      },
+      markLocalSaved, // onComplete
+      markError // onError
+    );
+  }, [markLocalSaved, markError]);
 
   // Handle section content changes
   const handleSectionChange = (sectionId: string, content: string) => {
@@ -152,6 +168,7 @@ const JournalEntryPage: React.FC = () => {
     };
 
     setEntry(updatedEntry);
+    markPending(); // Mark that changes are pending
     debouncedSave()(updatedEntry);
   };
 
@@ -226,6 +243,9 @@ const JournalEntryPage: React.FC = () => {
         isCurrentDayToday={isCurrentDayToday}
         copyStatus={copyStatus}
         onCopyToClipboard={copyToClipboard}
+        saveStatus={status}
+        saveStatusText={statusText}
+        saveStatusColor={statusColor}
       />
 
       {entry && (
@@ -236,6 +256,14 @@ const JournalEntryPage: React.FC = () => {
           onContentChange={handleSectionChange}
         />
       )}
+
+      {/* Mobile floating save indicator */}
+      <SaveIndicator
+        status={status}
+        statusText={statusText}
+        statusColor={statusColor}
+        variant='mobile'
+      />
     </div>
   );
 };

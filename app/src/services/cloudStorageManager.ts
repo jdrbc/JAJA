@@ -77,7 +77,10 @@ class CloudStorageManager {
     this.saveSettings();
   }
 
-  async setActiveProvider(providerName: string): Promise<boolean> {
+  async setActiveProvider(
+    providerName: string,
+    databaseService: any
+  ): Promise<boolean> {
     const provider = this.providers.get(providerName);
     if (!provider) {
       throw new Error(`Provider ${providerName} not found`);
@@ -100,7 +103,7 @@ class CloudStorageManager {
         localStorage.setItem('activeCloudProvider', providerName);
 
         // Try to load data from cloud on first connection
-        await this.loadFromCloud();
+        await this.loadFromCloud(databaseService);
 
         return true;
       } else {
@@ -165,7 +168,10 @@ class CloudStorageManager {
         currentDataHash === this.lastSavedDataHash
       ) {
         logger.log(
-          'CLOUD: Data unchanged since last save, skipping cloud save'
+          'CLOUD: Data unchanged since last save, skipping cloud save. Last saved hash: ' +
+            this.lastSavedDataHash +
+            ' Current hash: ' +
+            currentDataHash
         );
         this.updateStatus({ syncInProgress: false });
         return;
@@ -203,7 +209,7 @@ class CloudStorageManager {
     }
   }
 
-  async loadFromCloud(): Promise<boolean> {
+  async loadFromCloud(databaseService: any): Promise<boolean> {
     if (!this.activeProvider) {
       return false;
     }
@@ -222,17 +228,6 @@ class CloudStorageManager {
       const cloudData = await this.activeProvider.loadData();
 
       if (cloudData) {
-        // Get database service from global window object
-        const databaseService = (window as any).databaseService;
-        if (!databaseService) {
-          logger.error('Database service not available');
-          this.updateStatus({
-            syncInProgress: false,
-            error: 'Database service not available',
-          });
-          return false;
-        }
-
         // Extract hash from cloud data (last 64 characters)
         if (cloudData.length < 64) {
           logger.error(
@@ -393,7 +388,7 @@ class CloudStorageManager {
   }
 
   // Initialize from saved state on app start
-  async initializeFromSavedState(): Promise<void> {
+  async initializeFromSavedState(databaseService: any): Promise<void> {
     if (this.hasInitializedFromSavedState) {
       logger.log('CLOUD: Already initialized from saved state, skipping');
       return;
@@ -407,12 +402,12 @@ class CloudStorageManager {
 
     logger.log('CLOUD: Initializing from saved state...');
 
-    this.initializationPromise = this._performInitialization();
+    this.initializationPromise = this._performInitialization(databaseService);
     await this.initializationPromise;
     this.initializationPromise = null;
   }
 
-  private async _performInitialization(): Promise<void> {
+  private async _performInitialization(databaseService: any): Promise<void> {
     this.hasInitializedFromSavedState = true;
 
     const savedProvider = localStorage.getItem('activeCloudProvider');
@@ -427,7 +422,7 @@ class CloudStorageManager {
 
           // Load data from cloud on app startup
           logger.log('CLOUD: Provider authenticated, loading data from cloud');
-          const loadSuccess = await this.loadFromCloud();
+          const loadSuccess = await this.loadFromCloud(databaseService);
 
           // Ensure sync status is properly reset after initialization
           if (loadSuccess || !this.syncStatus.syncInProgress) {

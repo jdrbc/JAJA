@@ -19,12 +19,9 @@ class InitializationService {
       logger.log('INIT: Initializing database...');
       await databaseService.initialize();
 
-      // Step 2: Initialize unified sync service
+      // Step 2: Initialize unified sync service with database service
       logger.log('INIT: Initializing sync service...');
-      await unifiedSyncService.initialize();
-
-      // Step 3: Make database service globally available for cloud sync
-      (window as any).databaseService = databaseService;
+      await unifiedSyncService.initialize(databaseService);
 
       this.isInitialized = true;
       logger.log('INIT: Application initialization complete');

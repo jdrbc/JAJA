@@ -100,6 +100,7 @@ export class LocalApiService {
         const existingSections: { [key: string]: any } = {};
         while (sectionsStmt.step()) {
           const section = sectionsStmt.get({});
+          logger.log('section: ', section);
           existingSections[section.type as string] = section;
         }
         sectionsStmt.finalize();

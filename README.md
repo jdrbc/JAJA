@@ -1,3 +1,6 @@
+<img style="width: 200px" src="app/public/jaja.png"></img>
+
+
 # JAJA - Just Another Journal App
 
 A modern, privacy-focused personal journaling application that runs entirely in your browser.

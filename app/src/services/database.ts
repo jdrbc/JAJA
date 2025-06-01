@@ -13,6 +13,7 @@ class DatabaseService {
   private db: any = null;
   private isInitialized = false;
   private isInitializing = false;
+  private isImporting = false;
   private readonly DB_NAME = 'journal-app-db';
   private readonly DB_STORE_NAME = 'database';
   private readonly DB_KEY = 'journal.db';
@@ -197,18 +198,6 @@ class DatabaseService {
         trimmedSQL.startsWith('DROP') ||
         trimmedSQL.startsWith('ALTER')
       );
-    };
-
-    // Override exec method to detect changes
-    const originalExec = this.db.exec.bind(this.db);
-
-    this.db.exec = (sql: string) => {
-      const result = originalExec(sql);
-      if (isModifyingSQL(sql)) {
-        hasChanges = true;
-        this.scheduleAutoSave();
-      }
-      return result;
     };
 
     // Override prepare method to detect changes only when statements are executed
@@ -526,44 +515,52 @@ class DatabaseService {
   async importDatabase(data: Uint8Array): Promise<void> {
     logger.log('Starting database import...');
 
-    if (this.db) {
-      this.db.close();
-    }
+    // Set importing flag to prevent getContentHash from running during import
+    this.isImporting = true;
 
-    this.db = new this.sqlite3.oo1.DB(':memory:');
-    // Allocate WASM memory for the data
-    const pData = this.sqlite3.wasm.alloc(data.length);
     try {
-      // Copy data to WASM memory
-      this.sqlite3.wasm.heap8u().set(data, pData);
-      // Use sqlite3_deserialize to import the database
-      const rc = this.sqlite3.capi.sqlite3_deserialize(
-        this.db.pointer,
-        'main',
-        pData,
-        data.length,
-        data.length,
-        this.sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
-          this.sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
-      );
-      if (rc !== this.sqlite3.capi.SQLITE_OK) {
-        throw new Error(`Failed to deserialize database: ${rc}`);
+      if (this.db) {
+        this.db.close();
       }
-      // Don't free pData here - sqlite3_deserialize takes ownership when FREEONCLOSE is used
-    } catch (error) {
-      // Free memory on error
-      this.sqlite3.wasm.dealloc(pData);
-      throw error;
+
+      this.db = new this.sqlite3.oo1.DB(':memory:');
+      // Allocate WASM memory for the data
+      const pData = this.sqlite3.wasm.alloc(data.length);
+      try {
+        // Copy data to WASM memory
+        this.sqlite3.wasm.heap8u().set(data, pData);
+        // Use sqlite3_deserialize to import the database
+        const rc = this.sqlite3.capi.sqlite3_deserialize(
+          this.db.pointer,
+          'main',
+          pData,
+          data.length,
+          data.length,
+          this.sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
+            this.sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
+        );
+        if (rc !== this.sqlite3.capi.SQLITE_OK) {
+          throw new Error(`Failed to deserialize database: ${rc}`);
+        }
+        // Don't free pData here - sqlite3_deserialize takes ownership when FREEONCLOSE is used
+      } catch (error) {
+        // Free memory on error
+        this.sqlite3.wasm.dealloc(pData);
+        throw error;
+      }
+
+      // Set up auto-save for the imported database - but don't trigger immediate save
+      this.setupAutoSave();
+
+      // Save the imported database to IndexedDB
+      logger.log('Saving imported database to IndexedDB...');
+      await this.saveDatabaseToIndexedDB();
+
+      logger.log('Database imported successfully');
+    } finally {
+      // Clear importing flag
+      this.isImporting = false;
     }
-
-    // Set up auto-save for the imported database - but don't trigger immediate save
-    this.setupAutoSave();
-
-    // Save the imported database to IndexedDB
-    logger.log('Saving imported database to IndexedDB...');
-    await this.saveDatabaseToIndexedDB();
-
-    logger.log('Database imported successfully');
   }
 
   // Generate hash of user-entered data (excluding timestamps and auto-generated IDs)
@@ -572,8 +569,18 @@ class DatabaseService {
       throw new Error('Database not initialized');
     }
 
+    // Wait for any ongoing import operations to complete
+    while (this.isImporting) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // Double-check database is still available after waiting
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
     try {
-      // Collect all user-entered data in a consistent format
+      // Collect all user-entered data in a consistent format using select methods
       const contentData: any = {
         journalEntries: [],
         sections: [],
@@ -582,69 +589,58 @@ class DatabaseService {
       };
 
       // Get journal entries (only date, which is user-specified)
-      const entriesResult = this.db.exec(`
-        SELECT date FROM journal_entries ORDER BY date
-      `);
-      if (entriesResult.length > 0) {
-        contentData.journalEntries = entriesResult[0].values.map(
-          (row: any) => ({
-            date: row[0],
-          })
-        );
-      }
+      const entriesResults = this.db.selectArrays(
+        'SELECT date FROM journal_entries ORDER BY date DESC LIMIT 10'
+      );
+      contentData.journalEntries = entriesResults.map((row: any[]) => ({
+        date: row[0],
+      }));
 
       // Get sections content (user-entered content and type)
-      const sectionsResult = this.db.exec(`
+      const sectionsResults = this.db.selectArrays(`
         SELECT je.date, s.type, s.content, s.refresh_frequency, s.content_type
         FROM sections s
         JOIN journal_entries je ON s.entry_id = je.id
-        ORDER BY je.date, s.type
+        ORDER BY je.date DESC, s.type
+        LIMIT 50
       `);
-      if (sectionsResult.length > 0) {
-        contentData.sections = sectionsResult[0].values.map((row: any) => ({
-          date: row[0],
-          type: row[1],
-          content: row[2],
-          refreshFrequency: row[3],
-          contentType: row[4],
-        }));
-      }
+      contentData.sections = sectionsResults.map((row: any[]) => ({
+        date: row[0],
+        type: row[1],
+        content: row[2],
+        refreshFrequency: row[3],
+        contentType: row[4],
+      }));
 
       // Get template columns (user-defined structure)
-      const columnsResult = this.db.exec(`
-        SELECT title, width, display_order FROM template_columns ORDER BY display_order
-      `);
-      if (columnsResult.length > 0) {
-        contentData.templateColumns = columnsResult[0].values.map(
-          (row: any) => ({
-            title: row[0],
-            width: row[1],
-            displayOrder: row[2],
-          })
-        );
-      }
+      const columnsResults = this.db.selectArrays(
+        'SELECT title, width, display_order FROM template_columns ORDER BY display_order'
+      );
+      contentData.templateColumns = columnsResults.map((row: any[]) => ({
+        title: row[0],
+        width: row[1],
+        displayOrder: row[2],
+      }));
 
       // Get template sections (user-defined template structure)
-      const templateSectionsResult = this.db.exec(`
+      const templateSectionsResults = this.db.selectArrays(`
         SELECT ts.title, ts.refresh_frequency, ts.display_order, ts.placeholder, 
                ts.default_content, ts.content_type, tc.title as column_title
         FROM template_sections ts
         LEFT JOIN template_columns tc ON ts.column_id = tc.id
         ORDER BY ts.display_order
       `);
-      if (templateSectionsResult.length > 0) {
-        contentData.templateSections = templateSectionsResult[0].values.map(
-          (row: any) => ({
-            title: row[0],
-            refreshFrequency: row[1],
-            displayOrder: row[2],
-            placeholder: row[3],
-            defaultContent: row[4],
-            contentType: row[5],
-            columnTitle: row[6],
-          })
-        );
-      }
+      contentData.templateSections = templateSectionsResults.map(
+        (row: any[]) => ({
+          title: row[0],
+          refreshFrequency: row[1],
+          displayOrder: row[2],
+          placeholder: row[3],
+          defaultContent: row[4],
+          contentType: row[5],
+          columnTitle: row[6],
+        })
+      );
 
       // Convert to JSON string for consistent serialization
       const dataString = JSON.stringify(contentData, null, 0);
@@ -660,6 +656,7 @@ class DatabaseService {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 
+      logger.log('Generated content hash:', hashHex);
       return hashHex;
     } catch (error) {
       logger.error('Failed to generate content hash:', error);
@@ -668,6 +665,4 @@ class DatabaseService {
   }
 }
 
-const databaseService = new DatabaseService();
-
-export default databaseService;
+export default new DatabaseService();

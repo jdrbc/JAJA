@@ -88,11 +88,32 @@ export default function JournalHeader({
     setShowMobileMenu(!showMobileMenu);
   };
 
+  const handleLogoClick = () => {
+    navigate('/');
+  };
+
   return (
     <header className='relative bg-white border-b border-gray-200'>
       <div className='flex justify-between items-center p-4'>
-        {/* Left side - Date Navigation */}
+        {/* Left side - Logo and Date Navigation */}
         <div className='flex items-center gap-4'>
+          {/* Logo */}
+          <button
+            onClick={handleLogoClick}
+            className='flex items-center gap-2 hover:opacity-80 transition-opacity'
+            title='JAJA - Just Another Journal App'
+          >
+            <img
+              src='/logo.png'
+              alt='JAJA Logo'
+              className='h-8 w-8 object-contain'
+            />
+            <span className='hidden sm:block text-lg font-semibold text-gray-800'>
+              JAJA
+            </span>
+          </button>
+
+          {/* Date Navigation */}
           <DateDisplay
             date={currentDate}
             onNextDay={onNavigateToNextDay}

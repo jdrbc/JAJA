@@ -19,15 +19,19 @@ function debounce<T extends (...args: any[]) => any>(
 class UnifiedSyncService {
   private debouncedSync: () => void;
   private isInitialized = false;
+  private databaseService: any = null;
 
   constructor() {
     this.debouncedSync = debounce(this.performSync.bind(this), 2000);
   }
 
-  async initialize() {
+  async initialize(databaseService: any) {
     if (this.isInitialized) return;
 
     logger.log('UNIFIED_SYNC: Initializing unified sync service');
+
+    // Store database service reference
+    this.databaseService = databaseService;
 
     // Set up conflict resolver
     cloudStorageManager.setConflictResolver(
@@ -38,7 +42,7 @@ class UnifiedSyncService {
     reactiveDataService.setSyncService(this);
 
     // Initialize cloud storage if needed
-    await cloudStorageManager.initializeFromSavedState();
+    await cloudStorageManager.initializeFromSavedState(databaseService);
 
     this.isInitialized = true;
     logger.log('UNIFIED_SYNC: Initialization complete');
@@ -73,14 +77,13 @@ class UnifiedSyncService {
       startSync();
       logger.log('UNIFIED_SYNC: Starting sync operation');
 
-      // Get database service for cloud sync
-      const databaseService = (window as any).databaseService;
-      if (!databaseService) {
+      // Use stored database service
+      if (!this.databaseService) {
         throw new Error('Database service not available');
       }
 
       // Perform cloud sync
-      await cloudStorageManager.saveToCloud(databaseService);
+      await cloudStorageManager.saveToCloud(this.databaseService);
 
       completeSync();
       logger.log('UNIFIED_SYNC: Sync completed successfully');
@@ -95,7 +98,14 @@ class UnifiedSyncService {
   // Cloud provider management
   async connectProvider(providerName: string): Promise<boolean> {
     try {
-      const success = await cloudStorageManager.setActiveProvider(providerName);
+      if (!this.databaseService) {
+        throw new Error('Database service not available');
+      }
+
+      const success = await cloudStorageManager.setActiveProvider(
+        providerName,
+        this.databaseService
+      );
       if (success) {
         logger.log('UNIFIED_SYNC: Cloud provider connected:', providerName);
         // Trigger initial sync

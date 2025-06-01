@@ -39,6 +39,17 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
     }
 
     return new Promise((resolve, reject) => {
+      // Add timeout to prevent hanging
+      const timeout = setTimeout(() => {
+        reject(
+          new Error('Google Drive initialization timed out after 10 seconds')
+        );
+      }, 10000);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+      };
+
       // Check if Google API is already loaded
       if (window.google?.accounts?.oauth2) {
         this.setupTokenClient();
@@ -47,6 +58,7 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
         logger.log(
           'Google Drive provider initialized (using existing Google API)'
         );
+        cleanup();
         resolve();
         return;
       }
@@ -65,6 +77,7 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
           logger.log(
             'Google Drive provider initialized (script already loaded)'
           );
+          cleanup();
           resolve();
         } else {
           script.addEventListener('load', () => {
@@ -72,7 +85,12 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
             this.restoreSession();
             this.isInitializedFlag = true;
             logger.log('Google Drive provider initialized');
+            cleanup();
             resolve();
+          });
+          script.addEventListener('error', () => {
+            cleanup();
+            reject(new Error('Failed to load Google Identity Services script'));
           });
         }
         return;
@@ -87,13 +105,16 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
           this.restoreSession();
           this.isInitializedFlag = true;
           logger.log('Google Drive provider initialized');
+          cleanup();
           resolve();
         } catch (error) {
           logger.error('Google Drive initialization failed:', error);
+          cleanup();
           reject(error);
         }
       };
       script.onerror = () => {
+        cleanup();
         reject(new Error('Failed to load Google Identity Services script'));
       };
       document.head.appendChild(script);

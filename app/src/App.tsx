@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import JournalEntryPage from './pages/JournalEntryPage';
 import TemplateManagementPage from './pages/TemplateManagementPage';
@@ -9,17 +9,70 @@ import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 import './App.css';
 
 // Loading component while the app initializes
-const LoadingScreen: React.FC = () => (
-  <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
-    <div className='text-center'>
-      <div className='w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4' />
-      <h2 className='text-xl font-medium text-gray-900 mb-2'>
-        Initializing Journal
-      </h2>
-      <p className='text-gray-600'>Setting up your data and sync services...</p>
+const LoadingScreen: React.FC = () => {
+  const [loadingTime, setLoadingTime] = useState(0);
+  const [isTimeout, setIsTimeout] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLoadingTime(prev => {
+        const newTime = prev + 1;
+        if (newTime >= 25) {
+          setIsTimeout(true);
+        }
+        return newTime;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
+      <div className='text-center max-w-md px-6'>
+        <div className='w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4' />
+        <h2 className='text-xl font-medium text-gray-900 mb-2'>
+          Initializing Journal
+        </h2>
+        <p className='text-gray-600 mb-4'>
+          Setting up your data and sync services...
+        </p>
+
+        {/* Progress indicator */}
+        <div className='w-full bg-gray-200 rounded-full h-2 mb-4'>
+          <div
+            className={`h-2 rounded-full transition-all duration-1000 ${
+              isTimeout ? 'bg-orange-500' : 'bg-blue-600'
+            }`}
+            style={{ width: `${Math.min((loadingTime / 30) * 100, 100)}%` }}
+          />
+        </div>
+
+        <p className='text-sm text-gray-500'>
+          {loadingTime < 10 && 'Loading database...'}
+          {loadingTime >= 10 &&
+            loadingTime < 20 &&
+            'Connecting to cloud services...'}
+          {loadingTime >= 20 && !isTimeout && 'Finishing setup...'}
+          {isTimeout && (
+            <span className='text-orange-600'>
+              Taking longer than expected... This may indicate a network issue.
+            </span>
+          )}
+        </p>
+
+        {loadingTime > 30 && (
+          <button
+            onClick={() => window.location.reload()}
+            className='mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm'
+          >
+            Refresh Page
+          </button>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Error component if initialization fails
 const ErrorScreen: React.FC<{ error: string; onRetry: () => void }> = ({

@@ -23,9 +23,21 @@ class DatabaseService {
 
     // Prevent multiple concurrent initialization attempts
     if (this.isInitializing) {
-      // Wait for ongoing initialization to complete
+      // Wait for ongoing initialization to complete with timeout
+      const startTime = Date.now();
       while (this.isInitializing) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        if (Date.now() - startTime > 15000) {
+          // 15 second timeout
+          throw new Error(
+            'Database initialization timed out waiting for concurrent initialization'
+          );
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Check if initialization succeeded
+      if (!this.isInitialized) {
+        throw new Error('Database initialization failed in concurrent process');
       }
       return;
     }

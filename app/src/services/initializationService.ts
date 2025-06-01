@@ -56,7 +56,23 @@ export function useInitialization() {
       try {
         setIsLoading(true);
         setError(null);
-        await initializationService.initialize();
+
+        // Add timeout to prevent infinite loading
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(
+                'Initialization timed out after 30 seconds. Please refresh the page and try again.'
+              )
+            );
+          }, 30000); // 30 second timeout
+        });
+
+        await Promise.race([
+          initializationService.initialize(),
+          timeoutPromise,
+        ]);
+
         setIsInitialized(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Initialization failed');

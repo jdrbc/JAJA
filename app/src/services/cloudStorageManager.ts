@@ -415,14 +415,37 @@ class CloudStorageManager {
       const provider = this.providers.get(savedProvider)!;
 
       try {
-        await provider.initialize();
+        // Add timeout to provider initialization
+        const initPromise = provider.initialize();
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Cloud provider initialization timed out'));
+          }, 15000);
+        });
+
+        await Promise.race([initPromise, timeoutPromise]);
+
         if (provider.isAuthenticated()) {
           this.activeProvider = provider;
           this.updateStatus({ isConnected: true });
 
-          // Load data from cloud on app startup
+          // Load data from cloud on app startup with timeout
           logger.log('CLOUD: Provider authenticated, loading data from cloud');
-          const loadSuccess = await this.loadFromCloud(databaseService);
+
+          const loadPromise = this.loadFromCloud(databaseService);
+          const loadTimeoutPromise = new Promise(resolve => {
+            setTimeout(() => {
+              logger.log(
+                'CLOUD: Load operation timed out, continuing with local data'
+              );
+              resolve(false);
+            }, 10000);
+          });
+
+          const loadSuccess = await Promise.race([
+            loadPromise,
+            loadTimeoutPromise,
+          ]);
 
           // Ensure sync status is properly reset after initialization
           if (loadSuccess || !this.syncStatus.syncInProgress) {

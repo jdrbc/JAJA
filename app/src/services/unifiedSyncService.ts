@@ -2,6 +2,7 @@ import { useSyncStore } from '../stores/syncStore';
 import { reactiveDataService } from './reactiveDataService';
 import { cloudStorageManager } from './cloudStorageManager';
 import { conflictResolutionService } from './conflictResolutionService';
+import { backupManager } from './backupManager';
 import { logger } from '../utils/logger';
 
 // Debounce utility
@@ -18,11 +19,13 @@ function debounce<T extends (...args: any[]) => any>(
 
 class UnifiedSyncService {
   private debouncedSync: () => void;
+  private debouncedBackup: () => void;
   private isInitialized = false;
   private databaseService: any = null;
 
   constructor() {
     this.debouncedSync = debounce(this.performSync.bind(this), 2000);
+    this.debouncedBackup = debounce(this.performBackup.bind(this), 5000);
   }
 
   async initialize(databaseService: any) {
@@ -32,6 +35,9 @@ class UnifiedSyncService {
 
     // Store database service reference
     this.databaseService = databaseService;
+
+    // Initialize backup manager
+    backupManager.setDatabaseService(databaseService);
 
     // Set up conflict resolver
     cloudStorageManager.setConflictResolver(
@@ -43,6 +49,19 @@ class UnifiedSyncService {
 
     // Initialize cloud storage if needed
     await cloudStorageManager.initializeFromSavedState(databaseService);
+
+    // Set backup manager provider after cloud storage initialization
+    const activeProvider = cloudStorageManager.getActiveProvider();
+    if (activeProvider) {
+      logger.log(
+        'UNIFIED_SYNC: Setting backup manager provider after initialization:',
+        activeProvider.name
+      );
+      backupManager.setProvider(activeProvider);
+    }
+
+    // Initialize backup cleanup
+    await backupManager.initializeCleanup();
 
     this.isInitialized = true;
     logger.log('UNIFIED_SYNC: Initialization complete');
@@ -62,6 +81,9 @@ class UnifiedSyncService {
 
     logger.log('UNIFIED_SYNC: Scheduling sync...');
     this.debouncedSync();
+
+    // Also schedule backup when data changes
+    this.debouncedBackup();
   }
 
   private async performSync() {
@@ -95,6 +117,16 @@ class UnifiedSyncService {
     }
   }
 
+  private async performBackup() {
+    try {
+      logger.log('UNIFIED_SYNC: Performing backup...');
+      await backupManager.onDataChange();
+      logger.log('UNIFIED_SYNC: Backup completed');
+    } catch (error) {
+      logger.error('UNIFIED_SYNC: Backup failed:', error);
+    }
+  }
+
   // Cloud provider management
   async connectProvider(providerName: string): Promise<boolean> {
     try {
@@ -108,7 +140,12 @@ class UnifiedSyncService {
       );
       if (success) {
         logger.log('UNIFIED_SYNC: Cloud provider connected:', providerName);
-        // Trigger initial sync
+
+        // Set provider for backup manager
+        const activeProvider = cloudStorageManager.getActiveProvider();
+        backupManager.setProvider(activeProvider);
+
+        // Trigger initial sync and backup
         this.scheduleSync();
       }
       return success;
@@ -121,6 +158,8 @@ class UnifiedSyncService {
   async disconnectProvider(): Promise<void> {
     try {
       await cloudStorageManager.disconnect();
+      // Clear backup manager provider
+      backupManager.setProvider(null);
       useSyncStore.getState().reset();
       logger.log('UNIFIED_SYNC: Cloud provider disconnected');
     } catch (error) {
@@ -147,7 +186,16 @@ class UnifiedSyncService {
       throw new Error('Sync service not initialized');
     }
 
+    logger.log('UNIFIED_SYNC: Force sync requested...');
     await this.performSync();
+  }
+
+  getStatus() {
+    return cloudStorageManager.getStatus();
+  }
+
+  getSettings() {
+    return cloudStorageManager.getSettings();
   }
 }
 
@@ -169,5 +217,7 @@ export function useSync() {
     forceSync: unifiedSyncService.forceSync.bind(unifiedSyncService),
     providers: unifiedSyncService.getProviders(),
     activeProvider: unifiedSyncService.getActiveProvider(),
+    getStatus: unifiedSyncService.getStatus.bind(unifiedSyncService),
+    getSettings: unifiedSyncService.getSettings.bind(unifiedSyncService),
   };
 }

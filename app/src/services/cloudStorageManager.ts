@@ -13,11 +13,16 @@ class CloudStorageManager {
   private activeProvider: CloudStorageProvider | null = null;
   private syncSettings: CloudSyncSettings = {
     autoSync: false,
+    autoBackup: true,
+    backupIntervalMinutes: 5,
+    maxBackups: 50,
   };
   private syncStatus: CloudSyncStatus = {
     isConnected: false,
     lastSync: null,
+    lastBackup: null,
     syncInProgress: false,
+    backupInProgress: false,
     error: null,
   };
 

@@ -1,4 +1,8 @@
-import { CloudStorageProvider, StorageQuota } from '../../types/cloudStorage';
+import {
+  CloudStorageProvider,
+  StorageQuota,
+  BackupInfo,
+} from '../../types/cloudStorage';
 
 import { logger } from '../../utils/logger';
 
@@ -321,9 +325,11 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
     }
   }
 
-  private async createFile(data: Uint8Array): Promise<void> {
+  private async createFile(data: Uint8Array, fileName?: string): Promise<void> {
+    const actualFileName = fileName || this.JOURNAL_FILE_NAME;
+
     const fileMetadata = {
-      name: this.JOURNAL_FILE_NAME,
+      name: actualFileName,
       parents: ['appDataFolder'],
     };
 
@@ -407,5 +413,156 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
   async getLastSyncTime(): Promise<Date | null> {
     const timestamp = localStorage.getItem('googleDriveLastSync');
     return timestamp ? new Date(parseInt(timestamp)) : null;
+  }
+
+  // Backup Operations
+  async saveBackup(data: Uint8Array, timestamp: Date): Promise<void> {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    try {
+      const fileName = this.generateBackupFileName(timestamp);
+      await this.createFile(data, fileName);
+      logger.log(`Backup saved to Google Drive: ${fileName}`);
+    } catch (error) {
+      logger.error('Save backup error:', error);
+      throw new Error(`Failed to save backup: ${error}`);
+    }
+  }
+
+  async listBackups(): Promise<BackupInfo[]> {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    try {
+      const query = `parents in 'appDataFolder' and name contains 'journal-backup-' and trashed=false`;
+      const fields = 'files(id,name,size,modifiedTime)';
+
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=${fields}&spaces=appDataFolder`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const backups: BackupInfo[] = result.files.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        timestamp: new Date(file.modifiedTime),
+        size: parseInt(file.size || '0'),
+      }));
+
+      return backups;
+    } catch (error) {
+      logger.error('List backups error:', error);
+      throw new Error(`Failed to list backups: ${error}`);
+    }
+  }
+
+  async loadBackup(backupId: string): Promise<Uint8Array | null> {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${backupId}?alt=media`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to load backup: ${response.status} ${errorText}`
+        );
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      logger.log('Backup loaded from Google Drive successfully');
+      return new Uint8Array(arrayBuffer);
+    } catch (error) {
+      logger.error('Load backup error:', error);
+      throw new Error(`Failed to load backup: ${error}`);
+    }
+  }
+
+  async deleteBackup(backupId: string): Promise<void> {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${backupId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to delete backup: ${response.status} ${errorText}`
+        );
+      }
+
+      logger.log('Backup deleted from Google Drive successfully');
+    } catch (error) {
+      logger.error('Delete backup error:', error);
+      throw new Error(`Failed to delete backup: ${error}`);
+    }
+  }
+
+  async cleanupOldBackups(keepCount: number): Promise<void> {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    try {
+      const backups = await this.listBackups();
+
+      // Sort by timestamp descending (newest first)
+      const sortedBackups = backups.sort(
+        (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+      );
+
+      // Delete backups beyond the keep count
+      const backupsToDelete = sortedBackups.slice(keepCount);
+
+      for (const backup of backupsToDelete) {
+        await this.deleteBackup(backup.id);
+        logger.log(`Cleaned up old backup: ${backup.name}`);
+      }
+
+      if (backupsToDelete.length > 0) {
+        logger.log(`Cleaned up ${backupsToDelete.length} old backups`);
+      }
+    } catch (error) {
+      logger.error('Cleanup old backups error:', error);
+      throw new Error(`Failed to cleanup old backups: ${error}`);
+    }
+  }
+
+  private generateBackupFileName(timestamp: Date): string {
+    // Format: journal-backup-2024-12-19T10-30-45-123Z.db.gz
+    const isoString = timestamp.toISOString();
+    const fileName = `journal-backup-${isoString.replace(/[:.]/g, '-')}.db.gz`;
+    return fileName;
   }
 }

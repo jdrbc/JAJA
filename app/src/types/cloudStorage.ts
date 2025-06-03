@@ -18,19 +18,38 @@ export interface CloudStorageProvider {
   saveData(data: Uint8Array): Promise<void>;
   loadData(): Promise<Uint8Array | null>;
 
+  // Backup Operations
+  saveBackup(data: Uint8Array, timestamp: Date): Promise<void>;
+  listBackups(): Promise<BackupInfo[]>;
+  loadBackup(backupId: string): Promise<Uint8Array | null>;
+  deleteBackup(backupId: string): Promise<void>;
+  cleanupOldBackups(keepCount: number): Promise<void>;
+
   // Metadata
   getStorageQuota(): Promise<StorageQuota>;
   getLastSyncTime(): Promise<Date | null>;
 }
 
+export interface BackupInfo {
+  id: string;
+  timestamp: Date;
+  size: number;
+  name: string;
+}
+
 export interface CloudSyncSettings {
   autoSync: boolean;
+  autoBackup: boolean;
+  backupIntervalMinutes: number;
+  maxBackups: number;
 }
 
 export interface CloudSyncStatus {
   isConnected: boolean;
   lastSync: Date | null;
+  lastBackup: Date | null;
   syncInProgress: boolean;
+  backupInProgress: boolean;
   error: string | null;
 }
 

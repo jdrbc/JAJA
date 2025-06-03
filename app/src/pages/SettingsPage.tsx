@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CloudSyncSettings } from '../components/CloudSyncSettings';
+import { BackupRestoreSettings } from '../components/BackupRestoreSettings';
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -22,6 +23,11 @@ const SettingsPage: React.FC = () => {
         {/* Cloud Sync Settings */}
         <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
           <CloudSyncSettings />
+        </div>
+
+        {/* Backup & Restore Settings */}
+        <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
+          <BackupRestoreSettings />
         </div>
 
         {/* App Info */}

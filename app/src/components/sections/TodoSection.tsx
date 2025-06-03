@@ -42,8 +42,20 @@ const TodoSection: React.FC<TodoSectionProps> = ({
   };
 
   const [todos, setTodos] = useState<TodoItemData[]>(() => {
-    return parseTodos(content);
+    const parsed = parseTodos(content);
+    // If no todos exist, create one empty todo to start with
+    if (parsed.length === 0) {
+      const newTodo = createEmptyTodo();
+      // Don't set recentlyCreatedTodoId here to prevent autofocus on initial load
+      return [newTodo];
+    }
+    return parsed;
   });
+
+  // Track the ID of the most recently created todo for auto-focus
+  const [recentlyCreatedTodoId, setRecentlyCreatedTodoId] = useState<
+    string | null
+  >(null);
 
   // Create empty todo item
   function createEmptyTodo(): TodoItemData {
@@ -66,12 +78,6 @@ const TodoSection: React.FC<TodoSectionProps> = ({
     }
   };
 
-  // Add first todo when user clicks to start
-  const addFirstTodo = () => {
-    const newTodo = createEmptyTodo();
-    updateTodos([newTodo]);
-  };
-
   // Add todo after a specific item
   const addTodoAfter = (currentId: string, newText: string) => {
     const currentIndex = todos.findIndex(todo => todo.id === currentId);
@@ -87,6 +93,7 @@ const TodoSection: React.FC<TodoSectionProps> = ({
 
     // add a new todo after the current todo
     const newTodo = createEmptyTodo();
+    setRecentlyCreatedTodoId(newTodo.id); // Mark for auto-focus
     updatedTodos.splice(currentIndex + 1, 0, newTodo);
 
     updateTodos(updatedTodos);
@@ -154,41 +161,36 @@ const TodoSection: React.FC<TodoSectionProps> = ({
     }
   }, [content]);
 
+  // Reset recently created todo ID after a brief delay to allow focus to happen
+  useEffect(() => {
+    if (recentlyCreatedTodoId) {
+      const timer = setTimeout(() => {
+        setRecentlyCreatedTodoId(null);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [recentlyCreatedTodoId]);
+
   return (
     <div className='mb-6'>
       <SectionTitle title={title} />
       <div className='pl-6'>
         <div className='todo-list-container'>
-          {todos.length === 0 ? (
-            <div className='text-center py-8'>
-              <p className='text-gray-500 mb-4'>{placeholder}</p>
-              <button
-                onClick={addFirstTodo}
-                className='px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500'
-              >
-                Add First Todo
-              </button>
-            </div>
-          ) : (
-            <ul className='space-y-2'>
-              {todos.map((todo, index) => (
-                <TodoItem
-                  key={todo.id}
-                  todo={todo}
-                  onToggle={() => toggleTodo(todo.id)}
-                  onDelete={() => deleteTodo(todo.id)}
-                  onEdit={editTodo}
-                  isLast={index === todos.length - 1}
-                  onEnterPress={(id, text) => addTodoAfter(id, text)}
-                  onBackspaceDelete={removeTodo}
-                  autoFocus={
-                    todo.text.trim() === '' &&
-                    (index === todos.length - 1 || index === todos.length - 2)
-                  }
-                />
-              ))}
-            </ul>
-          )}
+          <ul className='space-y-2'>
+            {todos.map((todo, index) => (
+              <TodoItem
+                key={todo.id}
+                todo={todo}
+                onToggle={() => toggleTodo(todo.id)}
+                onDelete={() => deleteTodo(todo.id)}
+                onEdit={editTodo}
+                isLast={index === todos.length - 1}
+                onEnterPress={(id, text) => addTodoAfter(id, text)}
+                onBackspaceDelete={removeTodo}
+                autoFocus={todo.id === recentlyCreatedTodoId}
+              />
+            ))}
+          </ul>
         </div>
       </div>
     </div>

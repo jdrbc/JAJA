@@ -96,8 +96,6 @@ export class BackupManager {
 
       // Get current database data
       const databaseData = this.databaseService.exportDatabase();
-      const currentHash = await this.databaseService.getContentHash();
-
       // Skip backup if data hasn't changed (unless manual)
       if (!isManual && this.lastBackupTime) {
         const timeSinceLastBackup = Date.now() - this.lastBackupTime.getTime();

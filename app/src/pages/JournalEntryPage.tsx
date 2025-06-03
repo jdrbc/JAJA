@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { addDays, isSameDay, parse, isValid, format } from 'date-fns';
 import ColumnLayout from '../components/layout/ColumnLayout';
 import JournalHeader from '../components/layout/JournalHeader';
@@ -23,8 +23,8 @@ const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
   // Local state to store immediate changes without triggering re-renders
   const [localEntry, setLocalEntry] = useState<JournalEntry | null>(null);
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Get sync store actions
   const { setPending, completeSync, failSync } = useSyncStore();
@@ -91,31 +91,29 @@ const JournalEntryPage: React.FC = () => {
 
   // Navigation functions
   const navigateToDate = async (date: Date) => {
-    if (isLoading) return;
+    // Clear local state immediately for clean transition
+    setLocalEntry(null);
 
-    // Flush any pending saves before navigating
-    logger.log('Navigating to date, flushing pending saves...');
-    debouncedSave.flush();
-
-    // Wait a brief moment to ensure any ongoing save operations complete
-    await new Promise(resolve => setTimeout(resolve, 50));
-
+    // Navigate to new URL
     navigate(`/?date=${formatDateForAPI(date)}`);
+
+    // The useJournalEntry hook will automatically refetch when formattedDate changes
+    // due to the URL change, so we don't need to manually call refetch here
   };
 
-  const navigateToNextDay = async () => {
+  const navigateToNextDay = () => {
     const nextDay = addDays(currentDate, 1);
     const today = new Date();
 
     // Don't allow navigating into the future
     if (nextDay <= today) {
-      await navigateToDate(nextDay);
+      navigateToDate(nextDay);
     }
   };
 
-  const navigateToPreviousDay = async () => {
+  const navigateToPreviousDay = () => {
     const previousDay = addDays(currentDate, -1);
-    await navigateToDate(previousDay);
+    navigateToDate(previousDay);
   };
 
   const isCurrentDayToday = () => {

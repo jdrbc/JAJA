@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BackupInfo } from '../types/cloudStorage';
 import { backupManager } from '../services/backupManager';
 import { useSync } from '../services/unifiedSyncService';
@@ -12,7 +12,7 @@ export function BackupRestoreSettings() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const { isCloudEnabled, activeProvider } = useSync();
 
-  const loadBackups = async () => {
+  const loadBackups = useCallback(async () => {
     if (!isCloudEnabled) return;
 
     setLoading(true);
@@ -24,11 +24,11 @@ export function BackupRestoreSettings() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isCloudEnabled]);
 
   useEffect(() => {
     loadBackups();
-  }, [isCloudEnabled]);
+  }, [loadBackups]);
 
   const handleCreateBackup = async () => {
     setCreatingBackup(true);

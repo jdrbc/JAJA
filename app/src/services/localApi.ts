@@ -113,8 +113,16 @@ export class LocalApiService {
           const existingSection = existingSections[template.id];
           let content = '';
 
-          if (existingSection !== undefined) {
-            // Section exists in database - use its content (even if empty string)
+          if (
+            existingSection !== undefined &&
+            existingSection.content !== '' &&
+            existingSection.content !== null &&
+            this.isNotBlankTodoContent(
+              template.content_type,
+              existingSection.content
+            )
+          ) {
+            // Section exists in database - use its content
             content = existingSection.content ?? '';
           } else {
             // Section doesn't exist in database - get persisted content or default
@@ -180,6 +188,20 @@ export class LocalApiService {
     }
   }
 
+  private isNotBlankTodoContent(contentType: string, content: string): boolean {
+    if (contentType === 'todo') {
+      const parsedContent = JSON.parse(content);
+      if (parsedContent.items.length === 0) {
+        return false;
+      } else if (parsedContent.items.length === 1) {
+        return parsedContent.items[0].text.trim() !== '';
+      } else {
+        return true;
+      }
+    }
+    return true;
+  }
+
   private async getExistingSectionContent(
     entryDate: string,
     sectionType: string,
@@ -194,24 +216,27 @@ export class LocalApiService {
 
     try {
       const db = databaseService.getConnection()!;
-      const date = new Date(entryDate);
       let startDate: string;
 
       if (refreshFrequency === 'monthly') {
-        // Get first and last day of the month
-        const year = date.getFullYear();
-        const month = date.getMonth();
-        startDate = new Date(year, month, 1).toISOString().split('T')[0];
+        // Get first day of the month from the date string
+        const [year, month] = entryDate.split('-');
+        startDate = `${year}-${month.padStart(2, '0')}-01`;
       } else if (refreshFrequency === 'weekly') {
+        // Parse the date string directly to avoid timezone issues
+        const [year, month, day] = entryDate.split('-').map(Number);
+        const date = new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+
         // Get Monday of this week
         const dayOfWeek = date.getDay();
         const monday = new Date(date);
         monday.setDate(date.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-        startDate = monday.toISOString().split('T')[0];
 
-        // Get Sunday of this week
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
+        // Format back to YYYY-MM-DD without timezone conversion
+        const mondayYear = monday.getFullYear();
+        const mondayMonth = (monday.getMonth() + 1).toString().padStart(2, '0');
+        const mondayDay = monday.getDate().toString().padStart(2, '0');
+        startDate = `${mondayYear}-${mondayMonth}-${mondayDay}`;
       } else {
         return null;
       }

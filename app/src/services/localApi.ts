@@ -116,14 +116,8 @@ export class LocalApiService {
           if (existingSection !== undefined) {
             // Section exists in database - use its content (even if empty string)
             content = existingSection.content ?? '';
-            logger.log(
-              `Using existing content for ${template.id}: "${content}" (length: ${content.length})`
-            );
           } else {
             // Section doesn't exist in database - get persisted content or default
-            logger.log(
-              `No existing section found for ${template.id}, checking for persisted content...`
-            );
             content =
               (await this.getExistingSectionContent(
                 date,

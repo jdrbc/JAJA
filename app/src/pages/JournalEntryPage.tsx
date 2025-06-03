@@ -4,6 +4,7 @@ import { addDays, isSameDay, parse, isValid, format } from 'date-fns';
 import ColumnLayout from '../components/layout/ColumnLayout';
 import JournalHeader from '../components/layout/JournalHeader';
 import { SaveIndicator } from '../components/SaveIndicator';
+import { ContentUndoToolbar } from '../components/ContentUndoToolbar';
 
 import {
   SectionTemplate,
@@ -16,6 +17,7 @@ import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
 import { createDebouncedSave } from '../utils/debounceUtils';
 import { useSyncStore } from '../stores/syncStore';
 import { formatSectionToMarkdown } from '../utils/markdownFormatters';
+import { useContentUndo } from '../hooks/useContentUndo';
 
 const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
@@ -26,6 +28,9 @@ const JournalEntryPage: React.FC = () => {
 
   // Get sync store actions
   const { setPending, completeSync, failSync } = useSyncStore();
+
+  // Get undo/redo functions
+  const { undo, redo, canUndo, canRedo, undoDescription } = useContentUndo();
 
   // Get current date from URL or default to today
   const getCurrentDateFromUrl = useCallback((): Date => {
@@ -120,6 +125,7 @@ const JournalEntryPage: React.FC = () => {
 
   // Handle section content changes with immediate local state update and debounced save
   const handleSectionChange = (sectionId: string, content: string) => {
+    logger.log('handleSectionChange', sectionId, content);
     if (!localEntry) return;
 
     const updatedEntry = {
@@ -189,6 +195,19 @@ const JournalEntryPage: React.FC = () => {
     }
   };
 
+  // Enhanced undo/redo functions that cancel pending saves
+  const handleUndo = async () => {
+    // Cancel any pending debounced saves to prevent conflicts
+    debouncedSave.cancel();
+    await undo();
+  };
+
+  const handleRedo = async () => {
+    // Cancel any pending debounced saves to prevent conflicts
+    debouncedSave.cancel();
+    await redo();
+  };
+
   if (isLoading) {
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
@@ -223,6 +242,17 @@ const JournalEntryPage: React.FC = () => {
         copyStatus={copyStatus}
         onCopyToClipboard={copyToMarkdown}
       />
+
+      {/* Content Undo/Redo Toolbar */}
+      <div className='px-4 py-2 bg-gray-50 border-b border-gray-200'>
+        <ContentUndoToolbar
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          undoDescription={undoDescription}
+        />
+      </div>
 
       {localEntry && (
         <ColumnLayout

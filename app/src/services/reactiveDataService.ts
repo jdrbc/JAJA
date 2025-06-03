@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { localApiService } from './localApi';
 import { JournalEntry } from './api';
 import { logger } from '../utils/logger';
+import { ContentDeltaInterceptor } from './contentDeltaInterceptor';
 
 // Event emitter for data changes
 class DataEventEmitter {
@@ -43,6 +44,13 @@ const dataEventEmitter = new DataEventEmitter();
 // Reactive Data Service
 export class ReactiveDataService {
   private syncService: any = null;
+  private contentDeltaInterceptor: ContentDeltaInterceptor;
+
+  constructor() {
+    this.contentDeltaInterceptor = new ContentDeltaInterceptor(
+      dataEventEmitter
+    );
+  }
 
   // Set sync service (to avoid circular imports)
   setSyncService(syncService: any) {
@@ -58,16 +66,26 @@ export class ReactiveDataService {
     date: string,
     entry: JournalEntry
   ): Promise<JournalEntry> {
-    const result = await localApiService.updateEntry(date, entry);
+    const result = await this.contentDeltaInterceptor.interceptEntrySave(
+      entry,
+      async (entryDate: string, entryData: JournalEntry) => {
+        // Original save logic unchanged
+        const saveResult = await localApiService.updateEntry(
+          entryDate,
+          entryData
+        );
 
-    // NOTE: We don't emit change events here to avoid triggering unnecessary reloads
-    // The caller already has the updated data, and emitting events could cause race conditions
-    // where the reload happens before the database transaction is fully committed
+        // Emit change events
+        dataEventEmitter.emit(`journal:${entryDate}`);
 
-    // Trigger cloud sync if available
-    if (this.syncService) {
-      this.syncService.scheduleSync();
-    }
+        // Trigger cloud sync if available
+        if (this.syncService) {
+          this.syncService.scheduleSync();
+        }
+
+        return saveResult;
+      }
+    );
 
     logger.log('REACTIVE: Journal entry updated:', date);
     return result;
@@ -110,6 +128,27 @@ export class ReactiveDataService {
   async saveDatabase() {
     await localApiService.saveDatabase();
     logger.log('REACTIVE: Database saved manually');
+  }
+
+  // Expose content undo/redo functionality
+  async undoContent(): Promise<boolean> {
+    return this.contentDeltaInterceptor.undo();
+  }
+
+  async redoContent(): Promise<boolean> {
+    return this.contentDeltaInterceptor.redo();
+  }
+
+  canUndoContent(): boolean {
+    return this.contentDeltaInterceptor.canUndo();
+  }
+
+  canRedoContent(): boolean {
+    return this.contentDeltaInterceptor.canRedo();
+  }
+
+  getUndoDescription(): string | null {
+    return this.contentDeltaInterceptor.getUndoDescription();
   }
 }
 

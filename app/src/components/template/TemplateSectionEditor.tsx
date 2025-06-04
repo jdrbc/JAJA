@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SectionTemplate, Column } from '../../services/api';
+import { SectionRegistry } from '../sections/core/SectionRegistry';
 
 interface TemplateSectionEditorProps {
   sections: SectionTemplate[];
@@ -29,11 +30,17 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
   showForm,
   setShowForm,
 }) => {
-  const [formData, setFormData] = useState({
+  // Get section types from registry
+  const registry = SectionRegistry.getInstance();
+  const sectionTypes = registry.getAllTypes();
+
+  const [formData, setFormData] = useState<
+    Omit<SectionTemplate, 'created_at' | 'updated_at'>
+  >({
     id: '',
     title: '',
     refresh_frequency: 'daily',
-    display_order: 1,
+    display_order: Math.max(0, ...sections.map(s => s.display_order)) + 1,
     placeholder: '',
     default_content: '',
     content_type: 'text',
@@ -255,9 +262,11 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
                     className='mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm'
                     required
                   >
-                    <option value='text'>Text</option>
-                    <option value='todo'>Todo List</option>
-                    <option value='header'>Header</option>
+                    {sectionTypes.map(type => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

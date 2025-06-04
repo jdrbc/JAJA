@@ -2,17 +2,12 @@ import React, { useState } from 'react';
 import { useTemplateManagement } from '../../hooks/useTemplateManagement';
 import { SectionTemplate } from '../../services/api';
 import { logger } from '../../utils/logger';
+import { SectionRegistry } from '../sections/core/SectionRegistry';
 
 interface AddSectionButtonProps {
   columnId: string;
   onSectionAdded: (section: SectionTemplate) => void;
 }
-
-const SECTION_TYPES = [
-  { value: 'text', label: 'Text Section' },
-  { value: 'todo', label: 'Todo List' },
-  { value: 'header', label: 'Header Section' },
-];
 
 const AddSectionButton: React.FC<AddSectionButtonProps> = ({
   columnId,
@@ -23,6 +18,10 @@ const AddSectionButton: React.FC<AddSectionButtonProps> = ({
   const [contentType, setContentType] = useState('text');
   const [placeholder, setPlaceholder] = useState('');
   const { createSection, isLoading } = useTemplateManagement();
+
+  // Get section types from registry
+  const registry = SectionRegistry.getInstance();
+  const sectionTypes = registry.getAllTypes();
 
   const handleCreate = async () => {
     if (!title.trim()) return;
@@ -76,7 +75,7 @@ const AddSectionButton: React.FC<AddSectionButtonProps> = ({
             onChange={e => setContentType(e.target.value)}
             className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
           >
-            {SECTION_TYPES.map(type => (
+            {sectionTypes.map(type => (
               <option key={type.value} value={type.value}>
                 {type.label}
               </option>

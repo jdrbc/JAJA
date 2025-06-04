@@ -1,9 +1,6 @@
 import React from 'react';
-import BaseSection from './BaseSection';
-import TodoSection from './TodoSection';
-import HeaderSection from './HeaderSection';
-import BaseSectionPropertyEditor from './SectionPropertyEditor';
-import HeaderSectionPropertyEditor from './HeaderSectionPropertyEditor';
+import UniversalSection from './UniversalSection';
+import DynamicSectionPropertyEditor from './DynamicSectionPropertyEditor';
 import MenuDropdown from '../ui/MenuDropdown';
 import IconButton from '../ui/IconButton';
 import { SectionTemplate } from '../../services/api';
@@ -44,69 +41,6 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
     id: section.id,
     disabled: !isEditMode,
   });
-
-  // Determine component type based on content_type
-  const renderSectionComponent = () => {
-    if (section.content_type === 'todo') {
-      return (
-        <TodoSection
-          type={section.id}
-          title={section.title}
-          content={content}
-          onContentChange={newContent =>
-            onContentChange(section.id, newContent)
-          }
-          placeholder={section.placeholder}
-        />
-      );
-    }
-
-    if (section.content_type === 'header') {
-      return (
-        <HeaderSection
-          type={section.id}
-          title={section.title}
-          content={content}
-          onContentChange={newContent =>
-            onContentChange(section.id, newContent)
-          }
-          placeholder={section.placeholder}
-        />
-      );
-    }
-
-    // Default to BaseSection for text content
-    return (
-      <BaseSection
-        type={section.id}
-        title={section.title}
-        content={content}
-        onContentChange={newContent => onContentChange(section.id, newContent)}
-        placeholder={section.placeholder}
-      />
-    );
-  };
-
-  const renderPropertyEditor = () => {
-    if (section.content_type === 'header') {
-      return (
-        <HeaderSectionPropertyEditor
-          section={section}
-          onClose={() => onSectionPropertiesClose?.()}
-          onUpdate={onUpdate}
-        />
-      );
-    }
-
-    // Default to base property editor for other types
-    return (
-      <BaseSectionPropertyEditor
-        section={section}
-        onClose={() => onSectionPropertiesClose?.()}
-        onUpdate={onUpdate}
-      />
-    );
-  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -181,7 +115,11 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
 
             {/* Property editor or edit properties button */}
             {isEditMode && openPropertiesSectionId === section.id ? (
-              renderPropertyEditor()
+              <DynamicSectionPropertyEditor
+                section={section}
+                onClose={() => onSectionPropertiesClose?.()}
+                onUpdate={onUpdate}
+              />
             ) : (
               <div className='px-4 pb-4'>
                 <button
@@ -195,8 +133,16 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
           </div>
         </div>
       ) : (
-        // Normal mode - render section content
-        renderSectionComponent()
+        // Normal mode - use universal section
+        <UniversalSection
+          type={section.content_type}
+          title={section.title}
+          content={content}
+          onContentChange={newContent =>
+            onContentChange(section.id, newContent)
+          }
+          placeholder={section.placeholder}
+        />
       )}
     </div>
   );

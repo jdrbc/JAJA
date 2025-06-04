@@ -6,6 +6,7 @@ import SettingsPage from './pages/SettingsPage';
 import { useInitialization } from './services/initializationService';
 import { useConflictResolution } from './hooks/useConflictResolution';
 import { ConflictResolutionModal } from './components/ConflictResolutionModal';
+import { initializeSectionRegistry } from './components/sections/registry';
 import './App.css';
 
 // Loading component while the app initializes
@@ -111,6 +112,11 @@ const ErrorScreen: React.FC<{ error: string; onRetry: () => void }> = ({
 );
 
 function App() {
+  // Initialize section registry on app start
+  useEffect(() => {
+    initializeSectionRegistry();
+  }, []);
+
   const { isLoading, error, retry } = useInitialization();
   const { isModalOpen, conflict, resolveConflict } = useConflictResolution();
 

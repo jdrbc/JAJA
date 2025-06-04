@@ -6,6 +6,7 @@ import {
   SectionWithContent,
 } from './api';
 import { logger } from '../utils/logger';
+import { SectionRegistry } from '../components/sections/core/SectionRegistry';
 
 export class LocalApiService {
   private async ensureInitialized() {
@@ -117,7 +118,7 @@ export class LocalApiService {
             existingSection !== undefined &&
             existingSection.content !== '' &&
             existingSection.content !== null &&
-            this.isNotBlankTodoContent(
+            this.isNotBlankContent(
               template.content_type,
               existingSection.content
             )
@@ -188,18 +189,9 @@ export class LocalApiService {
     }
   }
 
-  private isNotBlankTodoContent(contentType: string, content: string): boolean {
-    if (contentType === 'todo') {
-      const parsedContent = JSON.parse(content);
-      if (parsedContent.items.length === 0) {
-        return false;
-      } else if (parsedContent.items.length === 1) {
-        return parsedContent.items[0].text.trim() !== '';
-      } else {
-        return true;
-      }
-    }
-    return true;
+  private isNotBlankContent(contentType: string, content: string): boolean {
+    const registry = SectionRegistry.getInstance();
+    return !registry.isContentEmpty(contentType, content);
   }
 
   private async getExistingSectionContent(
@@ -242,10 +234,12 @@ export class LocalApiService {
       }
 
       // Find the most recent entry in the period with this section type
+      // Include content_type to check for blank todo content
       const stmt = db.prepare(`
-        SELECT s.content 
+        SELECT s.content, ts.content_type
         FROM sections s
         JOIN journal_entries je ON s.entry_id = je.id
+        JOIN template_sections ts ON s.type = ts.id
         WHERE s.type = ? 
           AND je.date >= ? 
           AND je.date < ?
@@ -259,7 +253,13 @@ export class LocalApiService {
       let content: string | null = null;
       if (stmt.step()) {
         const row = stmt.get({});
-        content = row.content as string;
+        const rowContent = row.content as string;
+        const contentType = row.content_type as string;
+
+        // Check if content is not blank (including todo-specific blank check)
+        if (this.isNotBlankContent(contentType, rowContent)) {
+          content = rowContent;
+        }
       }
       stmt.finalize();
 

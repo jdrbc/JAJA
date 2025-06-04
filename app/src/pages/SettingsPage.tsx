@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CloudSyncSettings } from '../components/CloudSyncSettings';
 import { BackupRestoreSettings } from '../components/BackupRestoreSettings';
+import { ApiKeySettings } from '../components/ApiKeySettings';
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +24,11 @@ const SettingsPage: React.FC = () => {
         {/* Cloud Sync Settings */}
         <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
           <CloudSyncSettings />
+        </div>
+
+        {/* API Key Settings */}
+        <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
+          <ApiKeySettings />
         </div>
 
         {/* Backup & Restore Settings */}

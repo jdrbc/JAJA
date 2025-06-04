@@ -80,6 +80,8 @@ class DatabaseService {
           throw error;
         }
         logger.log('Database restored from IndexedDB successfully');
+        // Always run migrations even for restored databases to ensure schema is up-to-date
+        await this.runMigrations();
       } else {
         // Create new database
         this.db = new this.sqlite3.oo1.DB(':memory:');
@@ -319,11 +321,21 @@ class DatabaseService {
         FOREIGN KEY (column_id) REFERENCES template_columns (id) ON DELETE SET NULL
       );
 
+      -- API Keys table
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id TEXT PRIMARY KEY,
+        service TEXT NOT NULL UNIQUE,
+        key_value TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Indexes for better performance
       CREATE INDEX IF NOT EXISTS idx_journal_entries_date ON journal_entries(date);
       CREATE INDEX IF NOT EXISTS idx_sections_entry_id ON sections(entry_id);
       CREATE INDEX IF NOT EXISTS idx_sections_type ON sections(type);
       CREATE INDEX IF NOT EXISTS idx_template_sections_column_id ON template_sections(column_id);
+      CREATE INDEX IF NOT EXISTS idx_api_keys_service ON api_keys(service);
     `;
 
     try {
@@ -409,30 +421,45 @@ class DatabaseService {
 
   private async insertDefaultTemplate(): Promise<void> {
     try {
-      // Check if template already exists
-      const existingColumns = this.db.exec(
-        'SELECT COUNT(*) as count FROM template_columns'
-      );
-      const columnCount =
-        existingColumns.length > 0 ? existingColumns[0].values[0][0] : 0;
+      // Check if template already exists using a more robust approach
+      let columnCount = 0;
+      try {
+        const stmt = this.db.prepare(
+          'SELECT COUNT(*) as count FROM template_columns'
+        );
+        if (stmt.step()) {
+          const result = stmt.get({});
+          columnCount = result.count || 0;
+        }
+        stmt.finalize();
+      } catch (error) {
+        logger.log(
+          'Error checking existing columns, assuming none exist:',
+          error
+        );
+        columnCount = 0;
+      }
 
       if (columnCount > 0) {
         logger.log(
-          'Template already exists, skipping default template creation'
+          `Template already exists (${columnCount} columns found), skipping default template creation`
         );
         return;
       }
 
       logger.log('Creating default template...');
 
-      // Create default column
+      // Create default column with INSERT OR IGNORE to prevent constraint errors
       const defaultColumnId = 'column-1';
-      this.db.exec(`
-        INSERT INTO template_columns (id, title, width, display_order)
-        VALUES ('${defaultColumnId}', 'Main', 600, 1)
+      const columnStmt = this.db.prepare(`
+        INSERT OR IGNORE INTO template_columns (id, title, width, display_order)
+        VALUES (?, ?, ?, ?)
       `);
+      columnStmt.bind([defaultColumnId, 'Main', 600, 1]);
+      columnStmt.step();
+      columnStmt.finalize();
 
-      // Create default sections
+      // Create default sections with INSERT OR IGNORE
       const defaultSections = [
         {
           id: 'section-gratitude',
@@ -454,12 +481,23 @@ class DatabaseService {
         },
       ];
 
+      const sectionStmt = this.db.prepare(`
+        INSERT OR IGNORE INTO template_sections (id, title, display_order, placeholder, column_id)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+
       for (const section of defaultSections) {
-        this.db.exec(`
-          INSERT INTO template_sections (id, title, display_order, placeholder, column_id)
-          VALUES ('${section.id}', '${section.title}', ${section.order}, '${section.placeholder}', '${defaultColumnId}')
-        `);
+        sectionStmt.bind([
+          section.id,
+          section.title,
+          section.order,
+          section.placeholder,
+          defaultColumnId,
+        ]);
+        sectionStmt.step();
+        sectionStmt.reset();
       }
+      sectionStmt.finalize();
 
       logger.log('Default template created successfully');
     } catch (error) {

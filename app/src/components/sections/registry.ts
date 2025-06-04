@@ -2,6 +2,7 @@ import { SectionRegistry } from './core/SectionRegistry';
 import { TextSectionDefinition } from './definitions/TextSectionDefinition';
 import { TodoSectionDefinition } from './definitions/TodoSectionDefinition';
 import { HeaderSectionDefinition } from './definitions/HeaderSectionDefinition';
+import { MonthWeekGoalSectionDefinition } from './definitions/MonthWeekGoalSectionDefinition';
 
 // Initialize registry with all section types
 export function initializeSectionRegistry(): void {
@@ -10,6 +11,7 @@ export function initializeSectionRegistry(): void {
   registry.register(new TextSectionDefinition());
   registry.register(new TodoSectionDefinition());
   registry.register(new HeaderSectionDefinition());
+  registry.register(new MonthWeekGoalSectionDefinition());
 }
 
 // Export the registry instance for convenience

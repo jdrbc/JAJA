@@ -16,8 +16,8 @@ import { logger } from '../utils/logger';
 import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
 import { createDebouncedSave } from '../utils/debounceUtils';
 import { useSyncStore } from '../stores/syncStore';
-import { formatSectionToMarkdown } from '../utils/markdownFormatters';
 import { useContentUndo } from '../hooks/useContentUndo';
+import { sectionRegistry } from '../components/sections/registry';
 
 const JournalEntryPage: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
@@ -168,19 +168,52 @@ const JournalEntryPage: React.FC = () => {
     if (!localEntry) return;
 
     try {
-      const markdownSections = Object.entries(localEntry.sections)
-        .map(([sectionId, section]) => {
-          const template = templates.find(
-            (t: SectionTemplate) => t.id === sectionId
-          );
-          if (!template) return '';
-
-          return formatSectionToMarkdown({
-            template,
-            content: section.content,
-          });
+      // Group sections by column and sort properly
+      const sectionsWithContent = templates
+        .map((template: SectionTemplate) => {
+          const sectionData = localEntry.sections[template.id];
+          return {
+            ...template,
+            content: sectionData?.content || '',
+          };
         })
-        .filter(section => section.trim() !== '') // Remove empty sections
+        .filter(section => section.content.trim() !== '' && section.column_id); // Remove empty sections and sections without column_id
+
+      // Group sections by column
+      const sectionsByColumn = sectionsWithContent.reduce(
+        (acc, section) => {
+          const columnId = section.column_id!; // Assert non-null since we filtered above
+          if (!acc[columnId]) {
+            acc[columnId] = [];
+          }
+          acc[columnId].push(section);
+          return acc;
+        },
+        {} as Record<string, SectionWithContent[]>
+      );
+
+      // Sort columns by display_order (left to right)
+      const sortedColumns = columns
+        .filter(column => sectionsByColumn[column.id]?.length > 0) // Only include columns with content
+        .sort((a, b) => a.display_order - b.display_order);
+
+      // Generate markdown by column order, then section order within each column
+      const markdownSections = sortedColumns
+        .flatMap(column => {
+          // Sort sections within this column by display_order (top to bottom)
+          const columnSections = sectionsByColumn[column.id].sort(
+            (a, b) => a.display_order - b.display_order
+          );
+
+          return columnSections.map(section =>
+            sectionRegistry.formatToMarkdown(
+              section.content_type,
+              section.title,
+              section.content
+            )
+          );
+        })
+        .filter(section => section.trim() !== '')
         .join('\n');
 
       const fullMarkdown = `# Journal Entry - ${format(currentDate, 'MMMM d, yyyy')}\n\n${markdownSections}`;

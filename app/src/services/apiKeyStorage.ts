@@ -1,5 +1,7 @@
-import databaseService from './database';
+import database from '../database/watermelon/database';
+import { ApiKey as ApiKeyModel } from '../database/watermelon/models';
 import { logger } from '../utils/logger';
+import { Q } from '@nozbe/watermelondb';
 
 export interface ApiKey {
   id: string;
@@ -10,28 +12,18 @@ export interface ApiKey {
 }
 
 export class ApiKeyService {
-  private async ensureInitialized() {
-    await databaseService.initialize();
-  }
-
   async getApiKey(service: string): Promise<string | null> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare(
-        'SELECT key_value FROM api_keys WHERE service = ?'
-      );
-      stmt.bind([service]);
+      const apiKeys = await database.collections
+        .get<ApiKeyModel>('api_keys')
+        .query(Q.where('service', service))
+        .fetch();
 
-      let keyValue: string | null = null;
-      if (stmt.step()) {
-        const row = stmt.get({});
-        keyValue = row.key_value as string;
+      if (apiKeys.length > 0) {
+        return apiKeys[0].keyValue;
       }
-      stmt.finalize();
 
-      return keyValue;
+      return null;
     } catch (error) {
       logger.error(`Error getting API key for ${service}:`, error);
       return null;
@@ -39,38 +31,29 @@ export class ApiKeyService {
   }
 
   async setApiKey(service: string, keyValue: string): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      // Check if key already exists
-      const existingStmt = db.prepare(
-        'SELECT id FROM api_keys WHERE service = ?'
-      );
-      existingStmt.bind([service]);
+      await database.write(async () => {
+        // Check if key already exists
+        const existingKeys = await database.collections
+          .get<ApiKeyModel>('api_keys')
+          .query(Q.where('service', service))
+          .fetch();
 
-      if (existingStmt.step()) {
-        // Update existing key
-        const updateStmt = db.prepare(`
-          UPDATE api_keys 
-          SET key_value = ?, updated_at = CURRENT_TIMESTAMP 
-          WHERE service = ?
-        `);
-        updateStmt.bind([keyValue, service]);
-        updateStmt.step();
-        updateStmt.finalize();
-      } else {
-        // Insert new key
-        const insertStmt = db.prepare(`
-          INSERT INTO api_keys (id, service, key_value) 
-          VALUES (?, ?, ?)
-        `);
-        const id = `${service}_${Date.now()}`;
-        insertStmt.bind([id, service, keyValue]);
-        insertStmt.step();
-        insertStmt.finalize();
-      }
-      existingStmt.finalize();
+        if (existingKeys.length > 0) {
+          // Update existing key
+          await existingKeys[0].update((apiKey: ApiKeyModel) => {
+            apiKey.keyValue = keyValue;
+          });
+        } else {
+          // Insert new key
+          await database.collections
+            .get<ApiKeyModel>('api_keys')
+            .create((apiKey: ApiKeyModel) => {
+              apiKey.service = service;
+              apiKey.keyValue = keyValue;
+            });
+        }
+      });
 
       logger.log(`API key set for service: ${service}`);
     } catch (error) {
@@ -80,14 +63,17 @@ export class ApiKeyService {
   }
 
   async deleteApiKey(service: string): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare('DELETE FROM api_keys WHERE service = ?');
-      stmt.bind([service]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        const apiKeys = await database.collections
+          .get<ApiKeyModel>('api_keys')
+          .query(Q.where('service', service))
+          .fetch();
+
+        if (apiKeys.length > 0) {
+          await apiKeys[0].destroyPermanently();
+        }
+      });
 
       logger.log(`API key deleted for service: ${service}`);
     } catch (error) {
@@ -97,30 +83,19 @@ export class ApiKeyService {
   }
 
   async listApiKeys(): Promise<ApiKey[]> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare(`
-        SELECT id, service, '' as key_value, created_at, updated_at 
-        FROM api_keys 
-        ORDER BY service
-      `);
+      const apiKeyRecords = await database.collections
+        .get<ApiKeyModel>('api_keys')
+        .query(Q.sortBy('service'))
+        .fetch();
 
-      const keys: ApiKey[] = [];
-      while (stmt.step()) {
-        const row = stmt.get({});
-        keys.push({
-          id: row.id as string,
-          service: row.service as string,
-          keyValue: '****', // Don't return actual key values for security
-          createdAt: row.created_at as string,
-          updatedAt: row.updated_at as string,
-        });
-      }
-      stmt.finalize();
-
-      return keys;
+      return apiKeyRecords.map(record => ({
+        id: record.id,
+        service: record.service,
+        keyValue: '****', // Don't return actual key values for security
+        createdAt: record.createdAt.toISOString(),
+        updatedAt: record.updatedAt.toISOString(),
+      }));
     } catch (error) {
       logger.error('Error listing API keys:', error);
       return [];

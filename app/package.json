@@ -7,7 +7,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@nozbe/watermelondb": "^0.28.0",
-    "@sqlite.org/sqlite-wasm": "^3.49.2-build1",
     "@types/loglevel": "^1.5.4",
     "axios": "^1.9.0",
     "date-fns": "^4.1.0",

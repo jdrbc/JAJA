@@ -3,6 +3,7 @@ import { BackupInfo } from '../types/cloudStorage';
 import { backupManager } from '../services/backupManager';
 import { useSync } from '../services/unifiedSyncService';
 import { logger } from '../utils/logger';
+import { Spinner, LoadingButton } from './ui';
 
 export function BackupRestoreSettings() {
   const [backups, setBackups] = useState<BackupInfo[]>([]);
@@ -149,13 +150,13 @@ export function BackupRestoreSettings() {
               Create an immediate backup of your current journal data
             </p>
           </div>
-          <button
+          <LoadingButton
             onClick={handleCreateBackup}
-            disabled={creatingBackup}
-            className='px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+            loading={creatingBackup}
+            variant='primary'
           >
-            {creatingBackup ? 'Creating...' : 'Create Backup'}
-          </button>
+            Create Backup
+          </LoadingButton>
         </div>
       </div>
 
@@ -201,7 +202,14 @@ export function BackupRestoreSettings() {
             disabled={loading}
             className='px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50'
           >
-            {loading ? 'Loading...' : 'Refresh'}
+            {loading ? (
+              <div className='flex items-center space-x-2'>
+                <Spinner size='sm' />
+                <span>Loading...</span>
+              </div>
+            ) : (
+              'Refresh'
+            )}
           </button>
         </div>
 
@@ -248,7 +256,14 @@ export function BackupRestoreSettings() {
                       disabled={restoring === backup.id}
                       className='px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed'
                     >
-                      {restoring === backup.id ? 'Restoring...' : 'Restore'}
+                      {restoring === backup.id ? (
+                        <div className='flex items-center space-x-2'>
+                          <Spinner size='sm' />
+                          <span>Restoring...</span>
+                        </div>
+                      ) : (
+                        'Restore'
+                      )}
                     </button>
                     <button
                       onClick={() =>

@@ -7,6 +7,7 @@ import {
 } from '../types/cloudStorage';
 import { logger } from '../utils/logger';
 import { GoogleDriveAppDataProvider } from './providers/googleDriveProvider';
+import { databaseCompatibility } from '../database/watermelon/database';
 
 class CloudStorageManager {
   private providers: Map<string, CloudStorageProvider> = new Map();
@@ -70,6 +71,12 @@ class CloudStorageManager {
     this.conflictResolver = resolver;
   }
 
+  // Method to update the last saved data hash (used by backup manager during restore)
+  updateLastSavedDataHash(hash: string): void {
+    this.lastSavedDataHash = hash;
+    logger.log('CLOUD: Updated last saved data hash:', hash);
+  }
+
   private updateStatus(updates: Partial<CloudSyncStatus>): void {
     this.syncStatus = { ...this.syncStatus, ...updates };
     if (this.onStatusChange) {
@@ -84,7 +91,7 @@ class CloudStorageManager {
 
   async setActiveProvider(
     providerName: string,
-    databaseService: any
+    databaseService?: any
   ): Promise<boolean> {
     const provider = this.providers.get(providerName);
     if (!provider) {
@@ -108,7 +115,7 @@ class CloudStorageManager {
         localStorage.setItem('activeCloudProvider', providerName);
 
         // Try to load data from cloud on first connection
-        await this.loadFromCloud(databaseService);
+        await this.loadFromCloud();
 
         return true;
       } else {
@@ -149,7 +156,7 @@ class CloudStorageManager {
     this.saveStatus();
   }
 
-  async saveToCloud(databaseService: any): Promise<void> {
+  async saveToCloud(databaseService?: any): Promise<void> {
     if (!this.activeProvider || !this.syncSettings.autoSync) {
       logger.log('CLOUD: Skipping save - no provider or auto-sync disabled');
       return;
@@ -164,8 +171,8 @@ class CloudStorageManager {
       logger.log('CLOUD: Starting saveToCloud operation');
       this.updateStatus({ syncInProgress: true, error: null });
 
-      // Calculate hash of current data
-      const currentDataHash = await databaseService.getContentHash();
+      // Calculate hash of current data using WatermelonDB compatibility layer
+      const currentDataHash = await databaseCompatibility.getContentHash();
 
       // Check if data has actually changed since last save
       if (
@@ -182,8 +189,8 @@ class CloudStorageManager {
         return;
       }
 
-      // Export database and append hash
-      const databaseData = databaseService.exportDatabase();
+      // Get current database data and hash
+      const databaseData = await databaseCompatibility.exportDatabaseAsync();
       const hashBytes = new TextEncoder().encode(currentDataHash);
       const dataWithHash = new Uint8Array(
         databaseData.length + hashBytes.length
@@ -214,7 +221,7 @@ class CloudStorageManager {
     }
   }
 
-  async loadFromCloud(databaseService: any): Promise<boolean> {
+  async loadFromCloud(): Promise<boolean> {
     if (!this.activeProvider) {
       return false;
     }
@@ -251,8 +258,8 @@ class CloudStorageManager {
         const cloudHash = new TextDecoder().decode(cloudHashBytes);
 
         // Get current local data for comparison
-        const localData = databaseService.exportDatabase();
-        const localHash = await databaseService.getContentHash();
+        const localData = await databaseCompatibility.exportDatabaseAsync();
+        const localHash = await databaseCompatibility.getContentHash();
 
         // Check if there's a conflict
         if (localHash !== cloudHash) {
@@ -276,7 +283,8 @@ class CloudStorageManager {
                 case 'use-local':
                   logger.log('CLOUD: User chose to keep local data');
                   // Save local data to cloud to resolve conflict
-                  const localDataHash = await databaseService.getContentHash();
+                  const localDataHash =
+                    await databaseCompatibility.getContentHash();
                   const localHashBytes = new TextEncoder().encode(
                     localDataHash
                   );
@@ -292,7 +300,7 @@ class CloudStorageManager {
                 case 'use-cloud':
                   logger.log('CLOUD: User chose to keep cloud data');
                   // Import cloud data
-                  await databaseService.importDatabase(cloudDatabaseData);
+                  await databaseCompatibility.importDatabase(cloudDatabaseData);
                   this.lastSavedDataHash = cloudHash;
                   // reload with new state
                   window.location.reload();
@@ -316,7 +324,7 @@ class CloudStorageManager {
             logger.log(
               'CLOUD: No conflict resolver set, using cloud data by default'
             );
-            await databaseService.importDatabase(cloudDatabaseData);
+            await databaseCompatibility.importDatabase(cloudDatabaseData);
             this.lastSavedDataHash = cloudHash;
           }
         } else {
@@ -393,7 +401,7 @@ class CloudStorageManager {
   }
 
   // Initialize from saved state on app start
-  async initializeFromSavedState(databaseService: any): Promise<void> {
+  async initializeFromSavedState(): Promise<void> {
     if (this.hasInitializedFromSavedState) {
       logger.log('CLOUD: Already initialized from saved state, skipping');
       return;
@@ -407,12 +415,12 @@ class CloudStorageManager {
 
     logger.log('CLOUD: Initializing from saved state...');
 
-    this.initializationPromise = this._performInitialization(databaseService);
+    this.initializationPromise = this._performInitialization();
     await this.initializationPromise;
     this.initializationPromise = null;
   }
 
-  private async _performInitialization(databaseService: any): Promise<void> {
+  private async _performInitialization(): Promise<void> {
     this.hasInitializedFromSavedState = true;
 
     const savedProvider = localStorage.getItem('activeCloudProvider');
@@ -437,7 +445,7 @@ class CloudStorageManager {
           // Load data from cloud on app startup with timeout
           logger.log('CLOUD: Provider authenticated, loading data from cloud');
 
-          const loadPromise = this.loadFromCloud(databaseService);
+          const loadPromise = this.loadFromCloud();
           const loadTimeoutPromise = new Promise(resolve => {
             setTimeout(() => {
               logger.log(

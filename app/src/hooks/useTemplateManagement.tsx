@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Column, SectionTemplate } from '../services/api';
-import localApiService from '../services/localApi';
+import { localApiService } from '../services/localApi';
 import { useEditMode } from '../contexts/EditModeContext';
 
 export const useTemplateManagement = () => {

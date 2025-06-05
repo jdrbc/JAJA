@@ -1,4 +1,10 @@
-import databaseService from './database';
+import database from '../database/watermelon/database';
+import {
+  JournalEntry as JournalEntryModel,
+  Section as SectionModel,
+  TemplateColumn,
+  TemplateSection,
+} from '../database/watermelon/models';
 import {
   JournalEntry,
   SectionTemplate,
@@ -7,59 +13,44 @@ import {
 } from './api';
 import { logger } from '../utils/logger';
 import { SectionRegistry } from '../components/sections/core/SectionRegistry';
+import { Q } from '@nozbe/watermelondb';
 
 export class LocalApiService {
-  private async ensureInitialized() {
-    await databaseService.initialize();
-  }
-
   // Template Management
   async fetchTemplates(): Promise<{
     columns: Column[];
     sections: SectionTemplate[];
   }> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
       // Fetch columns
-      const columnsStmt = db.prepare(
-        'SELECT * FROM template_columns ORDER BY display_order'
-      );
-      const columns: Column[] = [];
-      while (columnsStmt.step()) {
-        const row = columnsStmt.get({});
-        columns.push({
-          id: row.id as string,
-          title: row.title as string,
-          width:
-            typeof row.width === 'number'
-              ? row.width
-              : parseInt(row.width as string) || 500,
-          display_order: row.display_order as number,
-        });
-      }
-      columnsStmt.finalize();
+      const columnRecords = await database.collections
+        .get<TemplateColumn>('template_columns')
+        .query(Q.sortBy('display_order'))
+        .fetch();
+
+      const columns: Column[] = columnRecords.map(record => ({
+        id: record.id,
+        title: record.title,
+        width: record.width,
+        display_order: record.displayOrder,
+      }));
 
       // Fetch sections
-      const sectionsStmt = db.prepare(
-        'SELECT * FROM template_sections ORDER BY display_order'
-      );
-      const sections: SectionTemplate[] = [];
-      while (sectionsStmt.step()) {
-        const row = sectionsStmt.get({});
-        sections.push({
-          id: row.id as string,
-          title: row.title as string,
-          refresh_frequency: row.refresh_frequency as string,
-          display_order: row.display_order as number,
-          placeholder: row.placeholder as string,
-          default_content: row.default_content as string,
-          content_type: row.content_type as string,
-          column_id: row.column_id as string,
-        });
-      }
-      sectionsStmt.finalize();
+      const sectionRecords = await database.collections
+        .get<TemplateSection>('template_sections')
+        .query(Q.sortBy('display_order'))
+        .fetch();
+
+      const sections: SectionTemplate[] = sectionRecords.map(record => ({
+        id: record.id,
+        title: record.title,
+        refresh_frequency: record.refreshFrequency,
+        display_order: record.displayOrder,
+        placeholder: record.placeholder,
+        default_content: record.defaultContent,
+        content_type: record.contentType,
+        column_id: record.columnId,
+      }));
 
       return { columns, sections };
     } catch (error) {
@@ -71,21 +62,15 @@ export class LocalApiService {
   // Journal Entry Management
   async fetchEntryByDate(date: string): Promise<JournalEntry | null> {
     logger.log(`fetchEntryByDate called for date: ${date}`);
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
 
     try {
       // Get entry
-      const entryStmt = db.prepare(
-        'SELECT * FROM journal_entries WHERE date = ?'
-      );
-      entryStmt.bind([date]);
+      const entryRecords = await database.collections
+        .get<JournalEntryModel>('journal_entries')
+        .query(Q.where('date', date))
+        .fetch();
 
-      let entry: any = null;
-      if (entryStmt.step()) {
-        entry = entryStmt.get({});
-      }
-      entryStmt.finalize();
+      const entry: JournalEntryModel | null = entryRecords[0] || null;
 
       // Get templates for section structure
       const templates = await this.fetchTemplates();
@@ -94,24 +79,20 @@ export class LocalApiService {
       // If entry exists, get its sections
       if (entry) {
         logger.log(`Entry found for ${date}, entry ID: ${entry.id}`);
-        const sectionsStmt = db.prepare(
-          'SELECT * FROM sections WHERE entry_id = ?'
-        );
-        sectionsStmt.bind([entry.id]);
 
-        const existingSections: { [key: string]: any } = {};
-        while (sectionsStmt.step()) {
-          const section = sectionsStmt.get({});
+        const existingSections = await entry.sections;
+        const existingSectionsMap: { [key: string]: SectionModel } = {};
+
+        existingSections.forEach((section: SectionModel) => {
           logger.log(
             `Found existing section: ${section.type}, content length: ${section.content?.length || 0}`
           );
-          existingSections[section.type as string] = section;
-        }
-        sectionsStmt.finalize();
+          existingSectionsMap[section.type] = section;
+        });
 
         // Build sections data with template info
         for (const template of templates.sections) {
-          const existingSection = existingSections[template.id];
+          const existingSection = existingSectionsMap[template.id];
           let content = '';
 
           if (
@@ -199,71 +180,62 @@ export class LocalApiService {
     sectionType: string,
     refreshFrequency: string
   ): Promise<string | null> {
-    logger.log(
-      `getExistingSectionContent called for: ${sectionType}, ${entryDate}, ${refreshFrequency}`
-    );
-    if (refreshFrequency === 'daily') {
-      return null; // Daily sections don't persist
-    }
-
     try {
-      const db = databaseService.getConnection()!;
       let startDate: string;
 
-      if (refreshFrequency === 'monthly') {
-        // Get first day of the month from the date string
-        const [year, month] = entryDate.split('-');
-        startDate = `${year}-${month.padStart(2, '0')}-01`;
-      } else if (refreshFrequency === 'weekly') {
-        // Parse the date string directly to avoid timezone issues
-        const [year, month, day] = entryDate.split('-').map(Number);
-        const date = new Date(year, month - 1, day); // month is 0-indexed in Date constructor
-
-        // Get Monday of this week
-        const dayOfWeek = date.getDay();
-        const monday = new Date(date);
-        monday.setDate(date.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-
-        // Format back to YYYY-MM-DD without timezone conversion
-        const mondayYear = monday.getFullYear();
-        const mondayMonth = (monday.getMonth() + 1).toString().padStart(2, '0');
-        const mondayDay = monday.getDate().toString().padStart(2, '0');
-        startDate = `${mondayYear}-${mondayMonth}-${mondayDay}`;
-      } else {
-        return null;
+      // Calculate start date based on refresh frequency
+      const entryDateObj = new Date(entryDate);
+      switch (refreshFrequency) {
+        case 'daily':
+          startDate = entryDate;
+          break;
+        case 'weekly':
+          const weekStart = new Date(entryDateObj);
+          weekStart.setDate(entryDateObj.getDate() - entryDateObj.getDay());
+          startDate = weekStart.toISOString().split('T')[0];
+          break;
+        case 'monthly':
+          const monthStart = new Date(
+            entryDateObj.getFullYear(),
+            entryDateObj.getMonth(),
+            1
+          );
+          startDate = monthStart.toISOString().split('T')[0];
+          break;
+        default:
+          startDate = entryDate;
       }
 
-      // Find the most recent entry in the period with this section type
-      // Include content_type to check for blank todo content
-      const stmt = db.prepare(`
-        SELECT s.content, ts.content_type
-        FROM sections s
-        JOIN journal_entries je ON s.entry_id = je.id
-        JOIN template_sections ts ON s.type = ts.id
-        WHERE s.type = ? 
-          AND je.date >= ? 
-          AND je.date < ?
-          AND s.content != ''
-        ORDER BY je.date DESC
-        LIMIT 1
-      `);
+      // Find sections with content in the time period
+      const sectionsCollection =
+        database.collections.get<SectionModel>('sections');
+      const sectionsWithContent = await sectionsCollection
+        .query(
+          Q.where('type', sectionType),
+          Q.where('content', Q.notEq('')),
+          Q.on('journal_entries', [
+            Q.where('date', Q.gte(startDate)),
+            Q.where('date', Q.lt(entryDate)),
+          ]),
+          Q.sortBy('created_at', Q.desc),
+          Q.take(1)
+        )
+        .fetch();
 
-      stmt.bind([sectionType, startDate, entryDate]);
+      if (sectionsWithContent.length > 0) {
+        const section = sectionsWithContent[0];
+        const contentType = section.contentType;
 
-      let content: string | null = null;
-      if (stmt.step()) {
-        const row = stmt.get({});
-        const rowContent = row.content as string;
-        const contentType = row.content_type as string;
-
-        // Check if content is not blank (including todo-specific blank check)
-        if (this.isNotBlankContent(contentType, rowContent)) {
-          content = rowContent;
+        // Check if content is not blank using the registry
+        if (this.isNotBlankContent(contentType, section.content)) {
+          logger.log(
+            `Found persisted content for ${sectionType} from period starting ${startDate}: ${section.content.substring(0, 50)}...`
+          );
+          return section.content;
         }
       }
-      stmt.finalize();
 
-      return content;
+      return null;
     } catch (error) {
       logger.error('Error getting existing section content:', error);
       return null;
@@ -271,130 +243,98 @@ export class LocalApiService {
   }
 
   async updateEntry(date: string, entry: JournalEntry): Promise<JournalEntry> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      db.exec('BEGIN TRANSACTION');
+      await database.write(async () => {
+        // Get or create journal entry
+        const entryRecords = await database.collections
+          .get<JournalEntryModel>('journal_entries')
+          .query(Q.where('date', date))
+          .fetch();
 
-      // Get or create journal entry
-      const entryStmt = db.prepare(
-        'SELECT id FROM journal_entries WHERE date = ?'
-      );
-      entryStmt.bind([date]);
-
-      let entryId: number;
-      if (entryStmt.step()) {
-        const row = entryStmt.get({});
-        entryId = row.id as number;
-      } else {
-        // Create new entry
-        const insertStmt = db.prepare(
-          'INSERT INTO journal_entries (date) VALUES (?)'
-        );
-        insertStmt.bind([date]);
-        insertStmt.step();
-        insertStmt.finalize();
-
-        // Get the last inserted row ID using a separate query
-        const lastIdStmt = db.prepare('SELECT last_insert_rowid() as id');
-        lastIdStmt.step();
-        const lastIdRow = lastIdStmt.get({});
-        entryId = lastIdRow.id as number;
-        lastIdStmt.finalize();
-        logger.log('Created new entry with ID:', entryId);
-      }
-      entryStmt.finalize();
-
-      // Update sections
-      logger.log(
-        'About to update sections with entryId:',
-        entryId,
-        'type:',
-        typeof entryId
-      );
-      for (const [sectionType, sectionData] of Object.entries(entry.sections)) {
-        // Check if section exists
-        const existingStmt = db.prepare(
-          'SELECT id FROM sections WHERE entry_id = ? AND type = ?'
-        );
-        existingStmt.bind([entryId, sectionType]);
-
-        if (existingStmt.step()) {
-          // Update existing section
-          const row = existingStmt.get({});
-          const updateStmt = db.prepare(`
-            UPDATE sections 
-            SET content = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-          `);
-          updateStmt.bind([sectionData.content, row.id]);
-          updateStmt.step();
-          updateStmt.finalize();
+        let journalEntry: JournalEntryModel;
+        if (entryRecords.length > 0) {
+          journalEntry = entryRecords[0];
         } else {
-          // Create new section
-          const insertStmt = db.prepare(`
-            INSERT INTO sections (entry_id, type, content, refresh_frequency, content_type) 
-            VALUES (?, ?, ?, ?, ?)
-          `);
-          insertStmt.bind([
-            entryId,
-            sectionType,
-            sectionData.content,
-            sectionData.refresh_frequency,
-            sectionData.content_type,
-          ]);
-          insertStmt.step();
-          insertStmt.finalize();
+          // Create new entry
+          journalEntry = await database.collections
+            .get<JournalEntryModel>('journal_entries')
+            .create((record: JournalEntryModel) => {
+              record.date = date;
+            });
+          logger.log('Created new entry with ID:', journalEntry.id);
         }
-        existingStmt.finalize();
-      }
 
-      db.exec('COMMIT');
+        // Update sections
+        logger.log('About to update sections for entry:', journalEntry.id);
+        for (const [sectionType, sectionData] of Object.entries(
+          entry.sections
+        )) {
+          // Check if section exists
+          const existingSections = await database.collections
+            .get<SectionModel>('sections')
+            .query(
+              Q.where('entry_id', journalEntry.id),
+              Q.where('type', sectionType)
+            )
+            .fetch();
 
-      // Return the updated entry without calling fetchEntryByDate to avoid recursion
-      // await this.fetchEntryByDate(date) as JournalEntry;
+          if (existingSections.length > 0) {
+            // Update existing section
+            const existingSection = existingSections[0];
+            await existingSection.update((section: SectionModel) => {
+              section.content = sectionData.content;
+            });
+          } else {
+            // Create new section
+            await database.collections
+              .get<SectionModel>('sections')
+              .create((section: SectionModel) => {
+                section.entryId = journalEntry.id;
+                section.type = sectionType;
+                section.content = sectionData.content;
+                section.refreshFrequency = sectionData.refresh_frequency;
+                section.contentType = sectionData.content_type || '';
+              });
+          }
+        }
+      });
+
       return entry;
     } catch (error) {
-      db.exec('ROLLBACK');
       logger.error('Error updating entry:', error);
       throw error;
     }
   }
 
   async deleteEntry(date: string): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare('DELETE FROM journal_entries WHERE date = ?');
-      stmt.bind([date]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        const entryRecords = await database.collections
+          .get<JournalEntryModel>('journal_entries')
+          .query(Q.where('date', date))
+          .fetch();
+
+        if (entryRecords.length > 0) {
+          await entryRecords[0].destroyPermanently();
+        }
+      });
     } catch (error) {
       logger.error('Error deleting entry:', error);
       throw error;
     }
   }
 
-  // Template CRUD operations
   async createTemplateColumn(columnData: Column): Promise<Column> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare(`
-        INSERT INTO template_columns (id, title, width, display_order) 
-        VALUES (?, ?, ?, ?)
-      `);
-      stmt.bind([
-        columnData.id,
-        columnData.title,
-        columnData.width,
-        columnData.display_order,
-      ]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        await database.collections
+          .get<TemplateColumn>('template_columns')
+          .create((record: TemplateColumn) => {
+            record.title = columnData.title;
+            record.width = columnData.width;
+            record.displayOrder = columnData.display_order;
+          });
+      });
 
       return columnData;
     } catch (error) {
@@ -407,54 +347,30 @@ export class LocalApiService {
     id: string,
     columnData: Partial<Column>
   ): Promise<Column> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const updates: string[] = [];
-      const values: any[] = [];
+      let updatedColumn: Column;
 
-      if (columnData.title !== undefined) {
-        updates.push('title = ?');
-        values.push(columnData.title);
-      }
-      if (columnData.width !== undefined) {
-        updates.push('width = ?');
-        values.push(columnData.width);
-      }
-      if (columnData.display_order !== undefined) {
-        updates.push('display_order = ?');
-        values.push(columnData.display_order);
-      }
+      await database.write(async () => {
+        const record = await database.collections
+          .get<TemplateColumn>('template_columns')
+          .find(id);
 
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      values.push(id);
+        await record.update((column: TemplateColumn) => {
+          if (columnData.title !== undefined) column.title = columnData.title;
+          if (columnData.width !== undefined) column.width = columnData.width;
+          if (columnData.display_order !== undefined)
+            column.displayOrder = columnData.display_order;
+        });
 
-      const stmt = db.prepare(
-        `UPDATE template_columns SET ${updates.join(', ')} WHERE id = ?`
-      );
-      stmt.bind(values);
-      stmt.step();
-      stmt.finalize();
+        updatedColumn = {
+          id: record.id,
+          title: record.title,
+          width: record.width,
+          display_order: record.displayOrder,
+        };
+      });
 
-      // Fetch and return updated column
-      const selectStmt = db.prepare(
-        'SELECT * FROM template_columns WHERE id = ?'
-      );
-      selectStmt.bind([id]);
-      selectStmt.step();
-      const row = selectStmt.get({});
-      selectStmt.finalize();
-
-      return {
-        id: row.id as string,
-        title: row.title as string,
-        width:
-          typeof row.width === 'number'
-            ? row.width
-            : parseInt(row.width as string) || 500,
-        display_order: row.display_order as number,
-      };
+      return updatedColumn!;
     } catch (error) {
       logger.error('Error updating template column:', error);
       throw error;
@@ -462,14 +378,13 @@ export class LocalApiService {
   }
 
   async deleteTemplateColumn(id: string): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare('DELETE FROM template_columns WHERE id = ?');
-      stmt.bind([id]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        const record = await database.collections
+          .get<TemplateColumn>('template_columns')
+          .find(id);
+        await record.destroyPermanently();
+      });
     } catch (error) {
       logger.error('Error deleting template column:', error);
       throw error;
@@ -479,26 +394,18 @@ export class LocalApiService {
   async batchUpdateColumnOrders(
     columns: Array<{ id: string; display_order: number }>
   ): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      db.exec('BEGIN TRANSACTION');
-
-      const stmt = db.prepare(
-        'UPDATE template_columns SET display_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-      );
-
-      for (const column of columns) {
-        stmt.bind([column.display_order, column.id]);
-        stmt.step();
-        stmt.reset();
-      }
-
-      stmt.finalize();
-      db.exec('COMMIT');
+      await database.write(async () => {
+        for (const column of columns) {
+          const record = await database.collections
+            .get<TemplateColumn>('template_columns')
+            .find(column.id);
+          await record.update((col: TemplateColumn) => {
+            col.displayOrder = column.display_order;
+          });
+        }
+      });
     } catch (error) {
-      db.exec('ROLLBACK');
       logger.error('Error batch updating column orders:', error);
       throw error;
     }
@@ -507,26 +414,18 @@ export class LocalApiService {
   async batchUpdateSectionOrders(
     sections: Array<{ id: string; display_order: number }>
   ): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      db.exec('BEGIN TRANSACTION');
-
-      const stmt = db.prepare(
-        'UPDATE template_sections SET display_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-      );
-
-      for (const section of sections) {
-        stmt.bind([section.display_order, section.id]);
-        stmt.step();
-        stmt.reset();
-      }
-
-      stmt.finalize();
-      db.exec('COMMIT');
+      await database.write(async () => {
+        for (const section of sections) {
+          const record = await database.collections
+            .get<TemplateSection>('template_sections')
+            .find(section.id);
+          await record.update((sec: TemplateSection) => {
+            sec.displayOrder = section.display_order;
+          });
+        }
+      });
     } catch (error) {
-      db.exec('ROLLBACK');
       logger.error('Error batch updating section orders:', error);
       throw error;
     }
@@ -535,26 +434,20 @@ export class LocalApiService {
   async createTemplateSection(
     sectionData: SectionTemplate
   ): Promise<SectionTemplate> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare(`
-        INSERT INTO template_sections (id, title, refresh_frequency, display_order, placeholder, default_content, content_type, column_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      stmt.bind([
-        sectionData.id,
-        sectionData.title,
-        sectionData.refresh_frequency,
-        sectionData.display_order,
-        sectionData.placeholder || '',
-        sectionData.default_content || '',
-        sectionData.content_type,
-        sectionData.column_id || null,
-      ]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        await database.collections
+          .get<TemplateSection>('template_sections')
+          .create((record: TemplateSection) => {
+            record.title = sectionData.title;
+            record.refreshFrequency = sectionData.refresh_frequency;
+            record.displayOrder = sectionData.display_order;
+            record.placeholder = sectionData.placeholder || '';
+            record.defaultContent = sectionData.default_content || '';
+            record.contentType = sectionData.content_type;
+            record.columnId = sectionData.column_id || '';
+          });
+      });
 
       return sectionData;
     } catch (error) {
@@ -567,71 +460,44 @@ export class LocalApiService {
     id: string,
     sectionData: Partial<SectionTemplate>
   ): Promise<SectionTemplate> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const updates: string[] = [];
-      const values: any[] = [];
+      let updatedSection: SectionTemplate;
 
-      if (sectionData.title !== undefined) {
-        updates.push('title = ?');
-        values.push(sectionData.title);
-      }
-      if (sectionData.refresh_frequency !== undefined) {
-        updates.push('refresh_frequency = ?');
-        values.push(sectionData.refresh_frequency);
-      }
-      if (sectionData.display_order !== undefined) {
-        updates.push('display_order = ?');
-        values.push(sectionData.display_order);
-      }
-      if (sectionData.placeholder !== undefined) {
-        updates.push('placeholder = ?');
-        values.push(sectionData.placeholder);
-      }
-      if (sectionData.default_content !== undefined) {
-        updates.push('default_content = ?');
-        values.push(sectionData.default_content);
-      }
-      if (sectionData.content_type !== undefined) {
-        updates.push('content_type = ?');
-        values.push(sectionData.content_type);
-      }
-      if (sectionData.column_id !== undefined) {
-        updates.push('column_id = ?');
-        values.push(sectionData.column_id);
-      }
+      await database.write(async () => {
+        const record = await database.collections
+          .get<TemplateSection>('template_sections')
+          .find(id);
 
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      values.push(id);
+        await record.update((section: TemplateSection) => {
+          if (sectionData.title !== undefined)
+            section.title = sectionData.title;
+          if (sectionData.refresh_frequency !== undefined)
+            section.refreshFrequency = sectionData.refresh_frequency;
+          if (sectionData.display_order !== undefined)
+            section.displayOrder = sectionData.display_order;
+          if (sectionData.placeholder !== undefined)
+            section.placeholder = sectionData.placeholder;
+          if (sectionData.default_content !== undefined)
+            section.defaultContent = sectionData.default_content;
+          if (sectionData.content_type !== undefined)
+            section.contentType = sectionData.content_type;
+          if (sectionData.column_id !== undefined)
+            section.columnId = sectionData.column_id;
+        });
 
-      const stmt = db.prepare(
-        `UPDATE template_sections SET ${updates.join(', ')} WHERE id = ?`
-      );
-      stmt.bind(values);
-      stmt.step();
-      stmt.finalize();
+        updatedSection = {
+          id: record.id,
+          title: record.title,
+          refresh_frequency: record.refreshFrequency,
+          display_order: record.displayOrder,
+          placeholder: record.placeholder,
+          default_content: record.defaultContent,
+          content_type: record.contentType,
+          column_id: record.columnId,
+        };
+      });
 
-      // Fetch and return updated section
-      const selectStmt = db.prepare(
-        'SELECT * FROM template_sections WHERE id = ?'
-      );
-      selectStmt.bind([id]);
-      selectStmt.step();
-      const row = selectStmt.get({});
-      selectStmt.finalize();
-
-      return {
-        id: row.id as string,
-        title: row.title as string,
-        refresh_frequency: row.refresh_frequency as string,
-        display_order: row.display_order as number,
-        placeholder: row.placeholder as string,
-        default_content: row.default_content as string,
-        content_type: row.content_type as string,
-        column_id: row.column_id as string,
-      };
+      return updatedSection!;
     } catch (error) {
       logger.error('Error updating template section:', error);
       throw error;
@@ -639,26 +505,27 @@ export class LocalApiService {
   }
 
   async deleteTemplateSection(id: string): Promise<void> {
-    await this.ensureInitialized();
-    const db = databaseService.getConnection()!;
-
     try {
-      const stmt = db.prepare('DELETE FROM template_sections WHERE id = ?');
-      stmt.bind([id]);
-      stmt.step();
-      stmt.finalize();
+      await database.write(async () => {
+        const record = await database.collections
+          .get<TemplateSection>('template_sections')
+          .find(id);
+        await record.destroyPermanently();
+      });
     } catch (error) {
       logger.error('Error deleting template section:', error);
       throw error;
     }
   }
 
-  // Manual save method for explicit persistence
   async saveDatabase(): Promise<void> {
-    await this.ensureInitialized();
-    await databaseService.saveDatabase();
+    // WatermelonDB handles persistence automatically
+    // This method is kept for compatibility but doesn't need implementation
+    logger.log(
+      'Database save requested - WatermelonDB handles persistence automatically'
+    );
   }
 }
 
+// Create and export singleton instance
 export const localApiService = new LocalApiService();
-export default localApiService;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SectionTemplate } from '../../services/api';
-import localApiService from '../../services/localApi';
+import { localApiService } from '../../services/localApi';
 import { SectionRegistry } from './core/SectionRegistry';
 import logger from '../../utils/logger';
 

@@ -446,11 +446,19 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
           headers: {
             Authorization: `Bearer ${this.accessToken}`,
           },
+          signal: AbortSignal.timeout(10000),
         }
       );
 
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error(
+            'Authentication expired - please reconnect Google Drive'
+          );
+        }
+        throw new Error(
+          `API request failed: ${response.status} ${response.statusText}`
+        );
       }
 
       const result = await response.json();
@@ -464,6 +472,19 @@ export class GoogleDriveAppDataProvider implements CloudStorageProvider {
       return backups;
     } catch (error) {
       logger.error('List backups error:', error);
+
+      if (
+        error instanceof TypeError &&
+        error.message.includes('Failed to fetch')
+      ) {
+        throw new Error(
+          'Network error - please check your internet connection'
+        );
+      }
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new Error('Request timed out - please try again');
+      }
+
       throw new Error(`Failed to list backups: ${error}`);
     }
   }

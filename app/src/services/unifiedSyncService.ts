@@ -21,23 +21,17 @@ class UnifiedSyncService {
   private debouncedSync: () => void;
   private debouncedBackup: () => void;
   private isInitialized = false;
-  private databaseService: any = null;
+  private isPaused = false;
 
   constructor() {
     this.debouncedSync = debounce(this.performSync.bind(this), 2000);
     this.debouncedBackup = debounce(this.performBackup.bind(this), 5000);
   }
 
-  async initialize(databaseService: any) {
+  async initialize() {
     if (this.isInitialized) return;
 
     logger.log('UNIFIED_SYNC: Initializing unified sync service');
-
-    // Store database service reference
-    this.databaseService = databaseService;
-
-    // Initialize backup manager
-    backupManager.setDatabaseService(databaseService);
 
     // Set up conflict resolver
     cloudStorageManager.setConflictResolver(
@@ -47,8 +41,8 @@ class UnifiedSyncService {
     // Connect reactive data service
     reactiveDataService.setSyncService(this);
 
-    // Initialize cloud storage if needed
-    await cloudStorageManager.initializeFromSavedState(databaseService);
+    // Initialize cloud storage
+    await cloudStorageManager.initializeFromSavedState();
 
     // Set backup manager provider after cloud storage initialization
     const activeProvider = cloudStorageManager.getActiveProvider();
@@ -71,6 +65,11 @@ class UnifiedSyncService {
   scheduleSync() {
     if (!this.isInitialized) {
       logger.log('UNIFIED_SYNC: Service not initialized, skipping sync');
+      return;
+    }
+
+    if (this.isPaused) {
+      logger.log('UNIFIED_SYNC: Service is paused, skipping sync');
       return;
     }
 
@@ -99,13 +98,8 @@ class UnifiedSyncService {
       startSync();
       logger.log('UNIFIED_SYNC: Starting sync operation');
 
-      // Use stored database service
-      if (!this.databaseService) {
-        throw new Error('Database service not available');
-      }
-
       // Perform cloud sync
-      await cloudStorageManager.saveToCloud(this.databaseService);
+      await cloudStorageManager.saveToCloud();
 
       completeSync();
       logger.log('UNIFIED_SYNC: Sync completed successfully');
@@ -130,14 +124,7 @@ class UnifiedSyncService {
   // Cloud provider management
   async connectProvider(providerName: string): Promise<boolean> {
     try {
-      if (!this.databaseService) {
-        throw new Error('Database service not available');
-      }
-
-      const success = await cloudStorageManager.setActiveProvider(
-        providerName,
-        this.databaseService
-      );
+      const success = await cloudStorageManager.setActiveProvider(providerName);
       if (success) {
         logger.log('UNIFIED_SYNC: Cloud provider connected:', providerName);
 
@@ -197,6 +184,17 @@ class UnifiedSyncService {
   getSettings() {
     return cloudStorageManager.getSettings();
   }
+
+  // Methods to pause/resume sync (for coordinating with backup restore)
+  pauseSync(): void {
+    this.isPaused = true;
+    logger.log('UNIFIED_SYNC: Sync operations paused');
+  }
+
+  resumeSync(): void {
+    this.isPaused = false;
+    logger.log('UNIFIED_SYNC: Sync operations resumed');
+  }
 }
 
 export const unifiedSyncService = new UnifiedSyncService();
@@ -215,6 +213,8 @@ export function useSync() {
     disconnectProvider:
       unifiedSyncService.disconnectProvider.bind(unifiedSyncService),
     forceSync: unifiedSyncService.forceSync.bind(unifiedSyncService),
+    pauseSync: unifiedSyncService.pauseSync.bind(unifiedSyncService),
+    resumeSync: unifiedSyncService.resumeSync.bind(unifiedSyncService),
     providers: unifiedSyncService.getProviders(),
     activeProvider: unifiedSyncService.getActiveProvider(),
     getStatus: unifiedSyncService.getStatus.bind(unifiedSyncService),

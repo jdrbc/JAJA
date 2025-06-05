@@ -5,7 +5,7 @@ import JournalEntry from './JournalEntry';
 export default class Section extends Model {
   static table = 'sections';
   static associations = {
-    journal_entry: { type: 'belongs_to', key: 'entry_id' },
+    journal_entries: { type: 'belongs_to', key: 'entry_id' },
   } as const;
 
   @field('entry_id') entryId!: string;

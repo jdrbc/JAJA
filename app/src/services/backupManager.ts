@@ -1,9 +1,10 @@
 import { CloudStorageProvider, BackupInfo } from '../types/cloudStorage';
 import { logger } from '../utils/logger';
+import { databaseCompatibility } from '../database/watermelon/database';
+import { unifiedSyncService } from './unifiedSyncService';
 
 export class BackupManager {
   private provider: CloudStorageProvider | null = null;
-  private databaseService: any = null;
   private backupInterval: NodeJS.Timeout | null = null;
   private lastBackupTime: Date | null = null;
 
@@ -23,14 +24,6 @@ export class BackupManager {
     } else {
       this.stopPeriodicBackup();
     }
-  }
-
-  setDatabaseService(databaseService: any): void {
-    logger.log(
-      'BACKUP: setDatabaseService called, service available:',
-      !!databaseService
-    );
-    this.databaseService = databaseService;
   }
 
   private startPeriodicBackup(): void {
@@ -63,7 +56,6 @@ export class BackupManager {
     logger.log('BACKUP: createBackup called, isManual:', isManual);
     logger.log('BACKUP: provider available:', !!this.provider);
     logger.log('BACKUP: provider name:', this.provider?.name || 'none');
-    logger.log('BACKUP: databaseService available:', !!this.databaseService);
 
     if (this.provider) {
       logger.log(
@@ -72,16 +64,9 @@ export class BackupManager {
       );
     }
 
-    if (!this.provider || !this.databaseService) {
-      const error =
-        'Cannot create backup - provider or database service not available';
+    if (!this.provider) {
+      const error = 'Cannot create backup - provider not available';
       logger.log('BACKUP:', error);
-      logger.log(
-        'BACKUP: Missing - provider:',
-        !this.provider,
-        'databaseService:',
-        !this.databaseService
-      );
       throw new Error(error);
     }
 
@@ -94,8 +79,9 @@ export class BackupManager {
     try {
       logger.log('BACKUP: Creating backup...');
 
-      // Get current database data
-      const databaseData = this.databaseService.exportDatabase();
+      // Get current database data using WatermelonDB compatibility layer
+      const databaseData = await databaseCompatibility.exportDatabaseAsync();
+
       // Skip backup if data hasn't changed (unless manual)
       if (!isManual && this.lastBackupTime) {
         const timeSinceLastBackup = Date.now() - this.lastBackupTime.getTime();
@@ -150,33 +136,79 @@ export class BackupManager {
   }
 
   async restoreFromBackup(backupId: string): Promise<boolean> {
-    if (!this.provider || !this.databaseService) {
-      logger.error(
-        'BACKUP: Cannot restore - provider or database service not available'
-      );
+    if (!this.provider) {
+      logger.error('BACKUP: Cannot restore - provider not available');
       return false;
     }
 
     try {
       logger.log('BACKUP: Restoring from backup:', backupId);
 
-      // Load backup data
-      const backupData = await this.provider.loadBackup(backupId);
-      if (!backupData) {
-        logger.error('BACKUP: Backup data not found:', backupId);
-        return false;
+      // Pause sync operations during restore to prevent race conditions
+      unifiedSyncService.pauseSync();
+
+      try {
+        // Load backup data
+        const backupData = await this.provider.loadBackup(backupId);
+        if (!backupData) {
+          logger.error('BACKUP: Backup data not found:', backupId);
+          return false;
+        }
+
+        // Decompress if needed
+        const restoredData = this.COMPRESSION_ENABLED
+          ? await this.decompressData(backupData)
+          : backupData;
+
+        // Import the backup data using WatermelonDB compatibility layer
+        await databaseCompatibility.importDatabase(restoredData);
+
+        // CRITICAL: Coordinate with cloud sync to prevent race conditions
+        // Import the cloudStorageManager to update cloud storage and hash tracking
+        const { cloudStorageManager } = await import('./cloudStorageManager');
+
+        // Save the restored data as the new current version in cloud storage
+        // This prevents conflicts when the sync service runs after restore
+        try {
+          logger.log(
+            'BACKUP: Updating cloud storage with restored data to prevent conflicts'
+          );
+
+          // Calculate hash of the restored data
+          const restoredHash = await databaseCompatibility.getContentHash();
+          const restoredHashBytes = new TextEncoder().encode(restoredHash);
+
+          // Prepare data with hash for cloud storage
+          const restoredDataWithHash = new Uint8Array(
+            restoredData.length + restoredHashBytes.length
+          );
+          restoredDataWithHash.set(restoredData, 0);
+          restoredDataWithHash.set(restoredHashBytes, restoredData.length);
+
+          // Save to cloud storage to establish this as the current version
+          await this.provider.saveData(restoredDataWithHash);
+
+          // Update the cloud storage manager's hash tracking to prevent conflicts
+          cloudStorageManager.updateLastSavedDataHash(restoredHash);
+
+          logger.log(
+            'BACKUP: Successfully updated cloud storage with restored data'
+          );
+        } catch (cloudError) {
+          logger.error(
+            'BACKUP: Failed to update cloud storage after restore:',
+            cloudError
+          );
+          // Continue anyway - the restore to local database succeeded
+          // The user will just see a conflict dialog on next sync
+        }
+
+        logger.log('BACKUP: Successfully restored from backup:', backupId);
+        return true;
+      } finally {
+        // Always resume sync operations, even if restore failed
+        unifiedSyncService.resumeSync();
       }
-
-      // Decompress if needed
-      const restoredData = this.COMPRESSION_ENABLED
-        ? await this.decompressData(backupData)
-        : backupData;
-
-      // Import the backup data
-      await this.databaseService.importDatabase(restoredData);
-
-      logger.log('BACKUP: Successfully restored from backup:', backupId);
-      return true;
     } catch (error) {
       logger.error('BACKUP: Failed to restore from backup:', error);
       return false;
@@ -326,7 +358,7 @@ export class BackupManager {
 
   // Trigger backup on significant changes (called by sync service)
   async onDataChange(): Promise<void> {
-    if (!this.provider || !this.databaseService) {
+    if (!this.provider) {
       return;
     }
 
@@ -349,8 +381,16 @@ export class BackupManager {
   // Initialize cleanup on startup
   async initializeCleanup(): Promise<void> {
     if (this.provider) {
-      logger.log('BACKUP: Initializing cleanup of old backups...');
-      await this.cleanupOldBackups();
+      try {
+        logger.log('BACKUP: Initializing cleanup of old backups...');
+        await this.cleanupOldBackups();
+      } catch (error) {
+        // Don't let cleanup failures prevent app initialization
+        logger.error(
+          'BACKUP: Cleanup initialization failed, but continuing:',
+          error
+        );
+      }
     }
   }
 }

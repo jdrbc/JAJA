@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Column, SectionWithContent } from '../services/api';
 import TemplateEditLayout from '../components/template/TemplateEditLayout';
 import { TemplateEditModeProvider } from '../contexts/EditModeContext';
-import { SectionWithContent, Column } from '../services/api';
-import localApiService from '../services/localApi';
+import { localApiService } from '../services/localApi';
 import { logger } from '../utils/logger';
 
 const TemplateManagementPage: React.FC = () => {

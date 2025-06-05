@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { unifiedSyncService } from './unifiedSyncService';
-import databaseService from './database';
 import { logger } from '../utils/logger';
 
 class InitializationService {
@@ -15,13 +14,14 @@ class InitializationService {
     logger.log('INIT: Starting application initialization...');
 
     try {
-      // Step 1: Initialize database
-      logger.log('INIT: Initializing database...');
-      await databaseService.initialize();
+      // Step 1: Initialize WatermelonDB database
+      logger.log('INIT: Initializing WatermelonDB...');
+      // WatermelonDB initializes itself when imported, but we can add any setup here if needed
+      logger.log('INIT: WatermelonDB ready');
 
-      // Step 2: Initialize unified sync service with database service
+      // Step 2: Initialize unified sync service with WatermelonDB
       logger.log('INIT: Initializing sync service...');
-      await unifiedSyncService.initialize(databaseService);
+      await unifiedSyncService.initialize();
 
       this.isInitialized = true;
       logger.log('INIT: Application initialization complete');

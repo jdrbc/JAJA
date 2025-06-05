@@ -1,9 +1,10 @@
 import database from '../database/watermelon/database';
 import {
   JournalEntry as JournalEntryModel,
-  Section as SectionModel,
   TemplateColumn,
   TemplateSection,
+  Section,
+  SectionJournalEntry,
 } from '../database/watermelon/models';
 import {
   JournalEntry,
@@ -14,8 +15,11 @@ import {
 import { logger } from '../utils/logger';
 import { SectionRegistry } from '../components/sections/core/SectionRegistry';
 import { Q } from '@nozbe/watermelondb';
+import { SectionService } from './sectionService';
 
 export class LocalApiService {
+  private sectionService = new SectionService();
+
   // Template Management
   async fetchTemplates(): Promise<{
     columns: Column[];
@@ -59,7 +63,6 @@ export class LocalApiService {
     }
   }
 
-  // Journal Entry Management
   async fetchEntryByDate(date: string): Promise<JournalEntry | null> {
     logger.log(`fetchEntryByDate called for date: ${date}`);
 
@@ -80,71 +83,82 @@ export class LocalApiService {
       if (entry) {
         logger.log(`Entry found for ${date}, entry ID: ${entry.id}`);
 
-        const existingSections = await entry.sections;
-        const existingSectionsMap: { [key: string]: SectionModel } = {};
+        const sectionsWithTemplates =
+          await this.sectionService.getSectionsForEntry(entry.id);
+        const existingSectionsMap: { [key: string]: any } = {};
 
-        existingSections.forEach((section: SectionModel) => {
-          logger.log(
-            `Found existing section: ${section.type}, content length: ${section.content?.length || 0}`
-          );
+        sectionsWithTemplates.forEach(section => {
           existingSectionsMap[section.type] = section;
         });
 
-        // Build sections data with template info
+        // Build sections data
         for (const template of templates.sections) {
           const existingSection = existingSectionsMap[template.id];
-          let content = '';
 
           if (
-            existingSection !== undefined &&
-            existingSection.content !== '' &&
-            existingSection.content !== null &&
+            existingSection &&
             this.isNotBlankContent(
-              template.content_type,
+              existingSection.contentType,
               existingSection.content
             )
           ) {
-            // Section exists in database - use its content
-            content = existingSection.content ?? '';
+            // Section exists with content
+            sectionsData[template.id] = {
+              content: existingSection.content,
+              title: template.title,
+              refresh_frequency: template.refresh_frequency,
+              placeholder: template.placeholder,
+              content_type: template.content_type,
+              id: template.id,
+              display_order: template.display_order,
+              default_content: template.default_content,
+              column_id: template.column_id,
+            };
           } else {
-            // Section doesn't exist in database - get persisted content or default
-            content =
-              (await this.getExistingSectionContent(
-                date,
-                template.id,
-                template.refresh_frequency
-              )) ||
-              template.default_content ||
-              '';
-            logger.log(
-              `Using fallback content for ${template.id}: "${content}" (length: ${content.length})`
-            );
-          }
+            // Get or create section for this timeframe
+            let section: { id: string; content: string };
 
-          sectionsData[template.id] = {
-            content,
-            title: template.title,
-            refresh_frequency: template.refresh_frequency,
-            placeholder: template.placeholder,
-            content_type: template.content_type,
-            id: template.id,
-            display_order: template.display_order,
-            default_content: template.default_content,
-            column_id: template.column_id,
-          };
+            await database.write(async () => {
+              section = await this.sectionService.getOrCreateSection(
+                template.id,
+                date
+              );
+
+              // Link to entry
+              await this.sectionService.linkSectionToEntry(
+                section.id,
+                entry.id
+              );
+            });
+
+            sectionsData[template.id] = {
+              content: section!.content || template.default_content || '',
+              title: template.title,
+              refresh_frequency: template.refresh_frequency,
+              placeholder: template.placeholder,
+              content_type: template.content_type,
+              id: template.id,
+              display_order: template.display_order,
+              default_content: template.default_content,
+              column_id: template.column_id,
+            };
+          }
         }
       } else {
         logger.log(`No entry found for ${date}, creating empty structure`);
-        // No entry exists, create empty structure with persisted content
+        // No entry exists, create empty structure with timeframe sections
         for (const template of templates.sections) {
-          const persistedContent = await this.getExistingSectionContent(
-            date,
-            template.id,
-            template.refresh_frequency
-          );
+          let section: { id: string; content: string };
+
+          await database.write(async () => {
+            section = await this.sectionService.getOrCreateSection(
+              template.id,
+              date
+            );
+          });
 
           sectionsData[template.id] = {
-            content: persistedContent || template.default_content || '',
+            content: section!.content || template.default_content || '',
             title: template.title,
             refresh_frequency: template.refresh_frequency,
             placeholder: template.placeholder,
@@ -175,73 +189,7 @@ export class LocalApiService {
     return !registry.isContentEmpty(contentType, content);
   }
 
-  private async getExistingSectionContent(
-    entryDate: string,
-    sectionType: string,
-    refreshFrequency: string
-  ): Promise<string | null> {
-    try {
-      let startDate: string;
-
-      // Calculate start date based on refresh frequency
-      const entryDateObj = new Date(entryDate);
-      switch (refreshFrequency) {
-        case 'daily':
-          startDate = entryDate;
-          break;
-        case 'weekly':
-          const weekStart = new Date(entryDateObj);
-          weekStart.setDate(entryDateObj.getDate() - entryDateObj.getDay());
-          startDate = weekStart.toISOString().split('T')[0];
-          break;
-        case 'monthly':
-          const monthStart = new Date(
-            entryDateObj.getFullYear(),
-            entryDateObj.getMonth(),
-            1
-          );
-          startDate = monthStart.toISOString().split('T')[0];
-          break;
-        default:
-          startDate = entryDate;
-      }
-
-      // Find sections with content in the time period
-      const sectionsCollection =
-        database.collections.get<SectionModel>('sections');
-      const sectionsWithContent = await sectionsCollection
-        .query(
-          Q.where('type', sectionType),
-          Q.where('content', Q.notEq('')),
-          Q.on('journal_entries', [
-            Q.where('date', Q.gte(startDate)),
-            Q.where('date', Q.lt(entryDate)),
-          ]),
-          Q.sortBy('created_at', Q.desc),
-          Q.take(1)
-        )
-        .fetch();
-
-      if (sectionsWithContent.length > 0) {
-        const section = sectionsWithContent[0];
-        const contentType = section.contentType;
-
-        // Check if content is not blank using the registry
-        if (this.isNotBlankContent(contentType, section.content)) {
-          logger.log(
-            `Found persisted content for ${sectionType} from period starting ${startDate}: ${section.content.substring(0, 50)}...`
-          );
-          return section.content;
-        }
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('Error getting existing section content:', error);
-      return null;
-    }
-  }
-
+  // Simplified updateEntry method
   async updateEntry(date: string, entry: JournalEntry): Promise<JournalEntry> {
     try {
       await database.write(async () => {
@@ -264,38 +212,26 @@ export class LocalApiService {
           logger.log('Created new entry with ID:', journalEntry.id);
         }
 
-        // Update sections
-        logger.log('About to update sections for entry:', journalEntry.id);
         for (const [sectionType, sectionData] of Object.entries(
           entry.sections
         )) {
-          // Check if section exists
-          const existingSections = await database.collections
-            .get<SectionModel>('sections')
-            .query(
-              Q.where('entry_id', journalEntry.id),
-              Q.where('type', sectionType)
-            )
-            .fetch();
+          // Get the section for this timeframe (uses current template settings)
+          const section = await this.sectionService.getOrCreateSection(
+            sectionType,
+            date
+          );
 
-          if (existingSections.length > 0) {
-            // Update existing section
-            const existingSection = existingSections[0];
-            await existingSection.update((section: SectionModel) => {
-              section.content = sectionData.content;
-            });
-          } else {
-            // Create new section
-            await database.collections
-              .get<SectionModel>('sections')
-              .create((section: SectionModel) => {
-                section.entryId = journalEntry.id;
-                section.type = sectionType;
-                section.content = sectionData.content;
-                section.refreshFrequency = sectionData.refresh_frequency;
-                section.contentType = sectionData.content_type || '';
-              });
-          }
+          // Link section to this journal entry
+          await this.sectionService.linkSectionToEntry(
+            section.id,
+            journalEntry.id
+          );
+
+          // Update section content
+          await this.sectionService.updateSectionContent(
+            section.id,
+            sectionData.content
+          );
         }
       });
 
@@ -468,6 +404,11 @@ export class LocalApiService {
           .get<TemplateSection>('template_sections')
           .find(id);
 
+        // Check if frequency is being changed
+        const isFrequencyChanging =
+          sectionData.refresh_frequency !== undefined &&
+          sectionData.refresh_frequency !== record.refreshFrequency;
+
         await record.update((section: TemplateSection) => {
           if (sectionData.title !== undefined)
             section.title = sectionData.title;
@@ -484,6 +425,14 @@ export class LocalApiService {
           if (sectionData.column_id !== undefined)
             section.columnId = sectionData.column_id;
         });
+
+        // If frequency changed, update the most recent section
+        if (isFrequencyChanging) {
+          await this.sectionService.updateMostRecentSectionForFrequencyChange(
+            id,
+            sectionData.refresh_frequency!
+          );
+        }
 
         updatedSection = {
           id: record.id,
@@ -507,6 +456,33 @@ export class LocalApiService {
   async deleteTemplateSection(id: string): Promise<void> {
     try {
       await database.write(async () => {
+        // First, find all sections that use this template
+        const sectionsCollection =
+          database.collections.get<Section>('sections');
+        const sectionsToDelete = await sectionsCollection
+          .query(Q.where('type', id))
+          .fetch();
+
+        // For each section, delete its journal entry junctions first
+        const junctionCollection =
+          database.collections.get<SectionJournalEntry>(
+            'section_journal_entries'
+          );
+        for (const section of sectionsToDelete) {
+          const junctions = await junctionCollection
+            .query(Q.where('section_id', section.id))
+            .fetch();
+
+          // Delete all junctions for this section
+          for (const junction of junctions) {
+            await junction.destroyPermanently();
+          }
+
+          // Delete the section itself
+          await section.destroyPermanently();
+        }
+
+        // Finally, delete the template section
         const record = await database.collections
           .get<TemplateSection>('template_sections')
           .find(id);

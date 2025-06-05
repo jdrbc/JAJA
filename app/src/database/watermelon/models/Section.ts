@@ -1,20 +1,26 @@
 import { Model } from '@nozbe/watermelondb';
-import { field, date, relation } from '@nozbe/watermelondb/decorators';
-import JournalEntry from './JournalEntry';
+import { field, date, children } from '@nozbe/watermelondb/decorators';
+import SectionJournalEntry from './SectionJournalEntry';
 
 export default class Section extends Model {
   static table = 'sections';
   static associations = {
-    journal_entries: { type: 'belongs_to', key: 'entry_id' },
+    section_journal_entries: { type: 'has_many', foreignKey: 'section_id' },
   } as const;
 
-  @field('entry_id') entryId!: string;
-  @field('type') type!: string;
+  @field('type') type!: string; // FK to template_sections.id
   @field('content') content!: string;
-  @field('refresh_frequency') refreshFrequency!: string;
-  @field('content_type') contentType!: string;
+  @field('timeframe_type') timeframeType!: 'daily' | 'weekly' | 'monthly';
+  @field('timeframe_start') timeframeStart!: string; // YYYY-MM-DD
+  @field('timeframe_end') timeframeEnd!: string; // YYYY-MM-DD
   @date('created_at') createdAt!: Date;
   @date('updated_at') updatedAt!: Date;
 
-  @relation('journal_entries', 'entry_id') journalEntry!: JournalEntry;
+  @children('section_journal_entries')
+  sectionJournalEntries!: SectionJournalEntry[];
+
+  // Computed property to get journal entries through junction
+  get journalEntries() {
+    return this.sectionJournalEntries.map(sje => sje.journalEntry);
+  }
 }

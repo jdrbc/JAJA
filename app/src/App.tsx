@@ -7,6 +7,7 @@ import { useInitialization } from './services/initializationService';
 import { useConflictResolution } from './hooks/useConflictResolution';
 import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 import { initializeSectionRegistry } from './components/sections/registry';
+import { DatabaseResetUtil } from './utils/databaseReset';
 import './App.css';
 
 // Loading component while the app initializes
@@ -115,6 +116,11 @@ function App() {
   // Initialize section registry on app start
   useEffect(() => {
     initializeSectionRegistry();
+
+    // Make DatabaseResetUtil available in console for development
+    if (process.env.NODE_ENV === 'development') {
+      (window as any).DatabaseResetUtil = DatabaseResetUtil;
+    }
   }, []);
 
   const { isLoading, error, retry } = useInitialization();

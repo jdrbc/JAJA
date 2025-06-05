@@ -6,6 +6,7 @@ import migrations from './migrations';
 import {
   JournalEntry,
   Section,
+  SectionJournalEntry,
   ApiKey,
   TemplateColumn,
   TemplateSection,
@@ -29,6 +30,7 @@ export const database = new Database({
   modelClasses: [
     JournalEntry,
     Section,
+    SectionJournalEntry,
     ApiKey,
     TemplateColumn,
     TemplateSection,
@@ -54,6 +56,7 @@ export class DatabaseCompatibilityLayer {
       tables: {
         journal_entries: [],
         sections: [],
+        section_journal_entries: [],
         template_columns: [],
         template_sections: [],
         api_keys: [],
@@ -73,7 +76,7 @@ export class DatabaseCompatibilityLayer {
       updatedAt: entry.updatedAt,
     }));
 
-    // Export sections
+    // Export sections (new timeframe-based structure)
     const sections = await database.collections
       .get<Section>('sections')
       .query()
@@ -81,14 +84,30 @@ export class DatabaseCompatibilityLayer {
 
     data.tables.sections = sections.map(section => ({
       id: section.id,
-      entryId: section.entryId,
       type: section.type,
       content: section.content,
-      refreshFrequency: section.refreshFrequency,
-      contentType: section.contentType,
+      timeframeType: section.timeframeType,
+      timeframeStart: section.timeframeStart,
+      timeframeEnd: section.timeframeEnd,
       createdAt: section.createdAt,
       updatedAt: section.updatedAt,
     }));
+
+    // Export section-journal entry relationships
+    const sectionJournalEntries = await database.collections
+      .get<SectionJournalEntry>('section_journal_entries')
+      .query()
+      .fetch();
+
+    data.tables.section_journal_entries = sectionJournalEntries.map(
+      relation => ({
+        id: relation.id,
+        sectionId: relation.sectionId,
+        journalEntryId: relation.journalEntryId,
+        createdAt: relation.createdAt,
+        updatedAt: relation.updatedAt,
+      })
+    );
 
     // Export template columns
     const templateColumns = await database.collections
@@ -163,6 +182,7 @@ export class DatabaseCompatibilityLayer {
         const collections = [
           'journal_entries',
           'sections',
+          'section_journal_entries',
           'template_columns',
           'template_sections',
           'api_keys',
@@ -232,7 +252,7 @@ export class DatabaseCompatibilityLayer {
           }
         }
 
-        // Import sections
+        // Import sections (new timeframe-based structure)
         if (importData.tables.sections) {
           for (const sectionData of importData.tables.sections) {
             const sectionsCollection =
@@ -240,11 +260,29 @@ export class DatabaseCompatibilityLayer {
             createActions.push(
               sectionsCollection.prepareCreate(section => {
                 section._raw.id = sectionData.id;
-                section.entryId = sectionData.entryId;
                 section.type = sectionData.type;
                 section.content = sectionData.content;
-                section.refreshFrequency = sectionData.refreshFrequency;
-                section.contentType = sectionData.contentType;
+                section.timeframeType = sectionData.timeframeType;
+                section.timeframeStart = sectionData.timeframeStart;
+                section.timeframeEnd = sectionData.timeframeEnd;
+              })
+            );
+          }
+        }
+
+        // Import section-journal entry relationships
+        if (importData.tables.section_journal_entries) {
+          for (const relationData of importData.tables
+            .section_journal_entries) {
+            const junctionCollection =
+              database.collections.get<SectionJournalEntry>(
+                'section_journal_entries'
+              );
+            createActions.push(
+              junctionCollection.prepareCreate(relation => {
+                relation._raw.id = relationData.id;
+                relation.sectionId = relationData.sectionId;
+                relation.journalEntryId = relationData.journalEntryId;
               })
             );
           }
@@ -297,22 +335,19 @@ export class DatabaseCompatibilityLayer {
         date: entry.date,
       }));
 
-      // Get sections content (user-entered content and type) - simplified query
+      // Get sections content (user-entered content and type)
       const sections = await database.collections
         .get<Section>('sections')
         .query(Q.take(50))
         .fetch();
 
-      for (const section of sections) {
-        const entry = await section.journalEntry;
-        contentData.sections.push({
-          date: entry.date,
-          type: section.type,
-          content: section.content,
-          refreshFrequency: section.refreshFrequency,
-          contentType: section.contentType,
-        });
-      }
+      contentData.sections = sections.map(section => ({
+        type: section.type,
+        content: section.content,
+        timeframeType: section.timeframeType,
+        timeframeStart: section.timeframeStart,
+        timeframeEnd: section.timeframeEnd,
+      }));
 
       // Get template columns (user-defined structure)
       const columns = await database.collections

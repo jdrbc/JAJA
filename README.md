@@ -59,6 +59,20 @@ A modern, privacy-focused personal journaling application that runs entirely in 
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
+## Database Reset
+
+```
+// run in browser console
+// Reset entire database
+DatabaseResetUtil.resetDatabase()
+
+// Reset only user data (journal entries, sections, relationships)
+DatabaseResetUtil.resetUserDataOnly()
+
+// Reset only templates (columns and section templates)
+DatabaseResetUtil.resetTemplatesOnly()
+```
+
 ## Testing
 
 Run integration tests with Cypress:

@@ -3,6 +3,7 @@ import { localApiService } from './localApi';
 import { JournalEntry } from './api';
 import { logger } from '../utils/logger';
 import { ContentDeltaInterceptor } from './contentDeltaInterceptor';
+import { dataChangeEmitter } from './unifiedSyncService';
 
 // Event emitter for data changes
 class DataEventEmitter {
@@ -41,20 +42,14 @@ class DataEventEmitter {
 
 const dataEventEmitter = new DataEventEmitter();
 
-// Reactive Data Service
+// Simplified Reactive Data Service
 export class ReactiveDataService {
-  private syncService: any = null;
   private contentDeltaInterceptor: ContentDeltaInterceptor;
 
   constructor() {
     this.contentDeltaInterceptor = new ContentDeltaInterceptor(
       dataEventEmitter
     );
-  }
-
-  // Set sync service (to avoid circular imports)
-  setSyncService(syncService: any) {
-    this.syncService = syncService;
   }
 
   // Journal Entry operations
@@ -69,19 +64,17 @@ export class ReactiveDataService {
     const result = await this.contentDeltaInterceptor.interceptEntrySave(
       entry,
       async (entryDate: string, entryData: JournalEntry) => {
-        // Original save logic unchanged
         const saveResult = await localApiService.updateEntry(
           entryDate,
           entryData
         );
 
-        // Emit change events
+        // Emit local change events
         dataEventEmitter.emit(`journal:${entryDate}`);
+        dataEventEmitter.emit('journal:*');
 
-        // Trigger cloud sync if available
-        if (this.syncService) {
-          this.syncService.scheduleSync();
-        }
+        // Notify sync service of data changes
+        dataChangeEmitter.emit();
 
         return saveResult;
       }
@@ -98,10 +91,8 @@ export class ReactiveDataService {
     dataEventEmitter.emit(`journal:${date}`);
     dataEventEmitter.emit('journal:*');
 
-    // Trigger cloud sync if available
-    if (this.syncService) {
-      this.syncService.scheduleSync();
-    }
+    // Notify sync service of data changes
+    dataChangeEmitter.emit();
 
     logger.log('REACTIVE: Journal entry deleted:', date);
   }
@@ -124,13 +115,7 @@ export class ReactiveDataService {
     return dataEventEmitter.subscribe('templates', callback);
   }
 
-  // Manual save trigger
-  async saveDatabase() {
-    await localApiService.saveDatabase();
-    logger.log('REACTIVE: Database saved manually');
-  }
-
-  // Expose content undo/redo functionality
+  // Content undo/redo functionality
   async undoContent(): Promise<boolean> {
     return this.contentDeltaInterceptor.undo();
   }

@@ -24,20 +24,20 @@ interface DeltaBatch {
   entryDate: string;
 }
 
-// Event emitter interface for dependency injection
-interface DataEventEmitter {
+// Simple event emitter interface
+interface EventEmitter {
   emit(key: string): void;
 }
 
 export class ContentDeltaInterceptor {
   private undoHistory: DeltaBatch[] = [];
   private redoHistory: DeltaBatch[] = [];
-  private maxHistorySize = 50; // Smaller for content-only
-  private dataEventEmitter: DataEventEmitter;
-  private isUndoRedoInProgress = false; // Flag to prevent recursion
+  private maxHistorySize = 50;
+  private eventEmitter: EventEmitter;
+  private isUndoRedoInProgress = false;
 
-  constructor(dataEventEmitter: DataEventEmitter) {
-    this.dataEventEmitter = dataEventEmitter;
+  constructor(eventEmitter: EventEmitter) {
+    this.eventEmitter = eventEmitter;
   }
 
   async interceptEntrySave(
@@ -47,7 +47,7 @@ export class ContentDeltaInterceptor {
       entry: JournalEntry
     ) => Promise<JournalEntry>
   ): Promise<JournalEntry> {
-    // Skip interception if undo/redo is in progress to prevent loops
+    // Skip interception if undo/redo is in progress
     if (this.isUndoRedoInProgress) {
       logger.log(
         'ContentDeltaInterceptor: Skipping interception during undo/redo'
@@ -61,7 +61,7 @@ export class ContentDeltaInterceptor {
     // Generate content-only deltas
     const deltas = this.generateContentDeltas(currentEntry, newEntry);
 
-    // Skip save if no content changes (fixes saves-on-read!)
+    // Skip save if no content changes
     if (deltas.length === 0) {
       logger.log(
         'ContentDeltaInterceptor: No content changes detected, skipping save'
@@ -102,7 +102,6 @@ export class ContentDeltaInterceptor {
       const oldSection = oldEntry.sections[sectionId];
 
       if (oldSection && oldSection.content !== newSection.content) {
-        // Content changed
         deltas.push({
           id: `content_change_${Date.now()}`,
           timestamp: Date.now(),
@@ -130,7 +129,7 @@ export class ContentDeltaInterceptor {
 
   private addDeltaBatch(batch: DeltaBatch): void {
     this.undoHistory.push(batch);
-    this.redoHistory = []; // Clear redo on new action
+    this.redoHistory = [];
 
     // Keep history manageable
     if (this.undoHistory.length > this.maxHistorySize) {
@@ -140,35 +139,32 @@ export class ContentDeltaInterceptor {
     logger.log(
       `ContentDeltaInterceptor: Added delta batch, history size: ${this.undoHistory.length}`
     );
-
-    // Emit refresh event to notify subscribers of state change
     this.emitRefreshEvent(batch.entryDate);
   }
 
-  // Undo/Redo Implementation
   async undo(): Promise<boolean> {
     const batch = this.undoHistory.pop();
     if (!batch) return false;
 
     try {
-      this.isUndoRedoInProgress = true; // Prevent interception loops
+      this.isUndoRedoInProgress = true;
       logger.log(
         `ContentDeltaInterceptor: Undoing ${batch.deltas.length} deltas`
       );
+
       await this.applyReverseBatch(batch);
       this.redoHistory.push(batch);
       this.emitRefreshEvent(batch.entryDate);
 
-      // Keep flag set for a brief period to account for async UI updates
       setTimeout(() => {
         this.isUndoRedoInProgress = false;
       }, 100);
 
       return true;
     } catch (error) {
-      this.undoHistory.push(batch); // Restore on failure
+      this.undoHistory.push(batch);
       logger.error('ContentDeltaInterceptor: Undo failed:', error);
-      this.isUndoRedoInProgress = false; // Clear immediately on error
+      this.isUndoRedoInProgress = false;
       throw error;
     }
   }
@@ -178,15 +174,15 @@ export class ContentDeltaInterceptor {
     if (!batch) return false;
 
     try {
-      this.isUndoRedoInProgress = true; // Prevent interception loops
+      this.isUndoRedoInProgress = true;
       logger.log(
         `ContentDeltaInterceptor: Redoing ${batch.deltas.length} deltas`
       );
+
       await this.applyForwardBatch(batch);
       this.undoHistory.push(batch);
       this.emitRefreshEvent(batch.entryDate);
 
-      // Keep flag set for a brief period to account for async UI updates
       setTimeout(() => {
         this.isUndoRedoInProgress = false;
       }, 100);
@@ -195,7 +191,7 @@ export class ContentDeltaInterceptor {
     } catch (error) {
       this.redoHistory.push(batch);
       logger.error('ContentDeltaInterceptor: Redo failed:', error);
-      this.isUndoRedoInProgress = false; // Clear immediately on error
+      this.isUndoRedoInProgress = false;
       throw error;
     }
   }
@@ -220,21 +216,18 @@ export class ContentDeltaInterceptor {
   ): JournalEntry {
     const newEntry = { ...entry };
 
-    switch (delta.operation) {
-      case 'content_change':
-        // Restore old content
-        if (delta.sectionId && delta.oldValue !== undefined) {
-          newEntry.sections[delta.sectionId].content = delta.oldValue;
-        }
-        break;
+    if (
+      delta.operation === 'content_change' &&
+      delta.sectionId &&
+      delta.oldValue !== undefined
+    ) {
+      newEntry.sections[delta.sectionId].content = delta.oldValue;
     }
 
     return newEntry;
   }
 
   private async applyForwardBatch(batch: DeltaBatch): Promise<void> {
-    // For redo, we can actually just re-apply the same changes
-    // since we store the full "new" values in deltas
     const entry = await localApiService.fetchEntryByDate(batch.entryDate);
     if (!entry) return;
 
@@ -253,20 +246,20 @@ export class ContentDeltaInterceptor {
   ): JournalEntry {
     const newEntry = { ...entry };
 
-    switch (delta.operation) {
-      case 'content_change':
-        if (delta.sectionId && delta.value !== undefined) {
-          newEntry.sections[delta.sectionId].content = delta.value;
-        }
-        break;
+    if (
+      delta.operation === 'content_change' &&
+      delta.sectionId &&
+      delta.value !== undefined
+    ) {
+      newEntry.sections[delta.sectionId].content = delta.value;
     }
 
     return newEntry;
   }
 
   private emitRefreshEvent(entryDate: string): void {
-    this.dataEventEmitter.emit(`journal:${entryDate}`);
-    this.dataEventEmitter.emit('journal:*');
+    this.eventEmitter.emit(`journal:${entryDate}`);
+    this.eventEmitter.emit('journal:*');
   }
 
   canUndo(): boolean {
@@ -281,16 +274,10 @@ export class ContentDeltaInterceptor {
     const lastBatch = this.undoHistory[this.undoHistory.length - 1];
     if (!lastBatch) return null;
 
-    const delta = lastBatch.deltas[0]; // Use first delta for description
-    switch (delta.operation) {
-      case 'content_change':
-        return `Undo ${delta.metadata.changeType} edit`;
-      default:
-        return 'Undo';
-    }
+    const delta = lastBatch.deltas[0];
+    return `Undo ${delta.metadata.changeType} edit`;
   }
 
-  // Debug methods
   getHistorySize(): number {
     return this.undoHistory.length;
   }

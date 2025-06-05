@@ -11,10 +11,10 @@ export function BackupRestoreSettings() {
   const [restoring, setRestoring] = useState<string | null>(null);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
-  const { isCloudEnabled, activeProvider } = useSync();
+  const { isCloudConnected, activeProvider } = useSync();
 
   const loadBackups = useCallback(async () => {
-    if (!isCloudEnabled) return;
+    if (!isCloudConnected) return;
 
     setLoading(true);
     try {
@@ -25,7 +25,7 @@ export function BackupRestoreSettings() {
     } finally {
       setLoading(false);
     }
-  }, [isCloudEnabled]);
+  }, [isCloudConnected]);
 
   useEffect(() => {
     loadBackups();
@@ -115,7 +115,7 @@ export function BackupRestoreSettings() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  if (!isCloudEnabled) {
+  if (!isCloudConnected) {
     return (
       <div className='bg-gray-50 border border-gray-200 rounded-lg p-6'>
         <h3 className='text-lg font-semibold text-gray-800 mb-2'>
@@ -299,7 +299,7 @@ export function BackupRestoreSettings() {
           </li>
           <li>
             • Backups are compressed and stored securely in your{' '}
-            {activeProvider?.displayName}
+            {activeProvider?.displayName || 'cloud storage'}
           </li>
           <li>
             • Restoring a backup will replace all current data and reload the

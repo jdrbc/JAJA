@@ -5,4 +5,5 @@ alwaysApply: true
 ---
 ask questions to clarify requirements
 always get proposed changes approved before implementing
-run `npm run quality:fix`
+do not fix lints mid-way through a project.
+wait until the end and then set working dir to the app dir & run `npm run quality:fix`

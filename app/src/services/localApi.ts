@@ -517,14 +517,6 @@ export class LocalApiService {
       throw error;
     }
   }
-
-  async saveDatabase(): Promise<void> {
-    // WatermelonDB handles persistence automatically
-    // This method is kept for compatibility but doesn't need implementation
-    logger.log(
-      'Database save requested - WatermelonDB handles persistence automatically'
-    );
-  }
 }
 
 // Create and export singleton instance

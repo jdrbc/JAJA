@@ -7,7 +7,7 @@ export function CloudSyncSettings() {
   const {
     providers,
     activeProvider,
-    isCloudEnabled,
+    isCloudConnected,
     connectProvider,
     disconnectProvider,
   } = useSync();
@@ -47,7 +47,7 @@ export function CloudSyncSettings() {
       </div>
 
       {/* Connection Status */}
-      {isCloudEnabled && activeProvider && (
+      {isCloudConnected && activeProvider && (
         <div className='bg-green-50 border border-green-200 rounded-lg p-4'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center space-x-3'>
@@ -71,7 +71,7 @@ export function CloudSyncSettings() {
       )}
 
       {/* Connection Options */}
-      {!isCloudEnabled && (
+      {!isCloudConnected && (
         <div>
           <h3 className='text-lg font-semibold text-gray-800 mb-4'>
             Choose a Cloud Provider

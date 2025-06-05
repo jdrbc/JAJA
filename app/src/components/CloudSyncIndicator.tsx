@@ -6,9 +6,9 @@ interface CloudSyncIndicatorProps {
 }
 
 export function CloudSyncIndicator({ onClick }: CloudSyncIndicatorProps) {
-  const { isCloudEnabled, activeProvider } = useSync();
+  const { isCloudConnected, activeProvider } = useSync();
 
-  if (!isCloudEnabled) {
+  if (!isCloudConnected) {
     return (
       <button
         onClick={onClick}

@@ -23,17 +23,49 @@ const AddSectionButton: React.FC<AddSectionButtonProps> = ({
   const registry = SectionRegistry.getInstance();
   const sectionTypes = registry.getAllTypes();
 
+  // Helper function to get default values from section definition
+  const getDefaultValues = (sectionContentType: string) => {
+    const definition = registry.get(sectionContentType);
+    if (!definition) {
+      return {
+        title: '',
+        placeholder: '',
+        refresh_frequency: 'daily',
+        default_content: '',
+      };
+    }
+
+    const propertyFields = definition.getPropertyFields();
+    const defaults: Record<string, any> = {};
+
+    propertyFields.forEach(field => {
+      if (field.defaultValue !== undefined) {
+        defaults[field.key] = field.defaultValue;
+      }
+    });
+
+    return {
+      title: defaults.title || '',
+      placeholder: defaults.placeholder || '',
+      refresh_frequency: defaults.refresh_frequency || 'daily',
+      default_content: definition.getDefaultContent() || '',
+    };
+  };
+
   const handleCreate = async () => {
     if (!title.trim()) return;
 
     try {
+      // Get default values from the section definition
+      const defaultValues = getDefaultValues(contentType);
+
       const newSection = await createSection({
         id: `section_${Date.now()}`,
         title: title.trim(),
         content_type: contentType,
-        placeholder: placeholder.trim(),
-        default_content: '',
-        refresh_frequency: 'daily',
+        placeholder: placeholder.trim() || defaultValues.placeholder,
+        default_content: defaultValues.default_content,
+        refresh_frequency: defaultValues.refresh_frequency,
         column_id: columnId,
       });
       onSectionAdded(newSection);

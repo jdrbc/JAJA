@@ -34,30 +34,77 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
   const registry = SectionRegistry.getInstance();
   const sectionTypes = registry.getAllTypes();
 
+  // Helper function to get default values from section definition
+  const getDefaultValues = (contentType: string) => {
+    const definition = registry.get(contentType);
+    if (!definition) {
+      return {
+        title: '',
+        placeholder: '',
+        refresh_frequency: 'daily',
+        default_content: '',
+      };
+    }
+
+    const propertyFields = definition.getPropertyFields();
+    const defaults: Record<string, any> = {};
+
+    propertyFields.forEach(field => {
+      if (field.defaultValue !== undefined) {
+        defaults[field.key] = field.defaultValue;
+      }
+    });
+
+    return {
+      title: defaults.title || '',
+      placeholder: defaults.placeholder || '',
+      refresh_frequency: defaults.refresh_frequency || 'daily',
+      default_content: definition.getDefaultContent() || '',
+    };
+  };
+
   const [formData, setFormData] = useState<
     Omit<SectionTemplate, 'created_at' | 'updated_at'>
-  >({
-    id: '',
-    title: '',
-    refresh_frequency: 'daily',
-    display_order: Math.max(0, ...sections.map(s => s.display_order)) + 1,
-    placeholder: '',
-    default_content: '',
-    content_type: 'text',
-    column_id: '',
+  >(() => {
+    const defaultValues = getDefaultValues('text');
+    return {
+      id: '',
+      title: defaultValues.title,
+      refresh_frequency: defaultValues.refresh_frequency,
+      display_order: Math.max(0, ...sections.map(s => s.display_order)) + 1,
+      placeholder: defaultValues.placeholder,
+      default_content: defaultValues.default_content,
+      content_type: 'text',
+      column_id: '',
+    };
   });
 
   const resetForm = () => {
+    const defaultValues = getDefaultValues('text');
     setFormData({
       id: '',
-      title: '',
-      refresh_frequency: 'daily',
+      title: defaultValues.title,
+      refresh_frequency: defaultValues.refresh_frequency,
       display_order: Math.max(...sections.map(s => s.display_order), 0) + 1,
-      placeholder: '',
-      default_content: '',
+      placeholder: defaultValues.placeholder,
+      default_content: defaultValues.default_content,
       content_type: 'text',
       column_id: columns.length > 0 ? columns[0].id : '',
     });
+  };
+
+  // Update form when content type changes
+  const handleContentTypeChange = (newContentType: string) => {
+    const defaultValues = getDefaultValues(newContentType);
+    setFormData(prev => ({
+      ...prev,
+      content_type: newContentType,
+      // Only update these if they haven't been manually set
+      title: prev.title || defaultValues.title,
+      placeholder: prev.placeholder || defaultValues.placeholder,
+      refresh_frequency: defaultValues.refresh_frequency,
+      default_content: defaultValues.default_content,
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -256,9 +303,7 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
                   <select
                     id='content_type'
                     value={formData.content_type}
-                    onChange={e =>
-                      setFormData({ ...formData, content_type: e.target.value })
-                    }
+                    onChange={e => handleContentTypeChange(e.target.value)}
                     className='mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm'
                     required
                   >

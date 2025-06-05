@@ -721,18 +721,6 @@ export class MonthWeekGoalSectionDefinition extends BaseSectionDefinition {
         options: [{ value: 'monthly', label: 'Monthly' }],
         defaultValue: 'monthly',
       },
-      {
-        key: 'gemini_enabled',
-        label: 'Enable AI Suggestions',
-        type: 'checkbox',
-        defaultValue: true,
-      },
-      {
-        key: 'auto_generate_weeks',
-        label: 'Auto-generate weeks',
-        type: 'checkbox',
-        defaultValue: true,
-      },
     ];
   }
 

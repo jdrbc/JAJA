@@ -146,7 +146,7 @@ export class GeminiService {
       logger.warn('Failed to parse context data:', error);
     }
 
-    return `Rewrite this goal in SMART format, keeping consistent with the user's style of writing (abbreviations, ect.) (Specific, Measurable, Achievable, Relevant, Time-bound):
+    return `Rewrite this goal in SMART format, keeping consistent with the user's style of writing (Specific, Measurable, Achievable, Relevant, Time-bound):
 
 Goal Type: ${goalType}
 Current Goal: "${goalText}"

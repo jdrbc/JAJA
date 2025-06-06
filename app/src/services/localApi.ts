@@ -87,7 +87,7 @@ export class LocalApiService {
           await this.sectionService.getSectionsForEntry(entry.id);
         const existingSectionsMap: { [key: string]: any } = {};
 
-        sectionsWithTemplates.forEach(section => {
+        sectionsWithTemplates.forEach((section: any) => {
           existingSectionsMap[section.type] = section;
         });
 
@@ -174,6 +174,7 @@ export class LocalApiService {
       logger.log(
         `fetchEntryByDate returning entry for ${date} with ${Object.keys(sectionsData).length} sections`
       );
+      logger.log(sectionsData);
       return {
         date,
         sections: sectionsData,
@@ -189,48 +190,104 @@ export class LocalApiService {
     return !registry.isContentEmpty(contentType, content);
   }
 
+  private async getOrCreateJournalEntry(
+    date: string
+  ): Promise<JournalEntryModel> {
+    const entryRecords = await database.collections
+      .get<JournalEntryModel>('journal_entries')
+      .query(Q.where('date', date))
+      .fetch();
+
+    if (entryRecords.length > 0) {
+      const journalEntry = entryRecords[0];
+      logger.log('Updated existing entry with ID:', journalEntry.id);
+      return journalEntry;
+    } else {
+      // Create new entry
+      const journalEntry = await database.collections
+        .get<JournalEntryModel>('journal_entries')
+        .create((record: JournalEntryModel) => {
+          record.date = date;
+        });
+      logger.log('Created new entry with ID:', journalEntry.id);
+      return journalEntry;
+    }
+  }
+
+  private async getExistingSectionsMap(
+    journalEntryId: string
+  ): Promise<{ [key: string]: any }> {
+    const existingSections =
+      await this.sectionService.getSectionsForEntry(journalEntryId);
+    const existingSectionsMap: { [key: string]: any } = {};
+
+    existingSections.forEach((section: any) => {
+      existingSectionsMap[section.type] = section;
+    });
+
+    return existingSectionsMap;
+  }
+
+  private async processSectionUpdate(
+    sectionType: string,
+    sectionData: any,
+    existingSectionsMap: { [key: string]: any },
+    journalEntryId: string,
+    date: string
+  ): Promise<void> {
+    const existingSection = existingSectionsMap[sectionType];
+
+    if (existingSection) {
+      // Use existing section that's already linked to this entry
+      logger.log(
+        'Updating existing linked section:',
+        existingSection.id,
+        sectionData.content
+      );
+      await this.sectionService.updateSectionContent(
+        existingSection.id,
+        sectionData.content
+      );
+    } else {
+      // No existing section linked to this entry, get or create one
+      const section = await this.sectionService.getOrCreateSection(
+        sectionType,
+        date
+      );
+
+      // Link section to this journal entry
+      await this.sectionService.linkSectionToEntry(section.id, journalEntryId);
+
+      // Update section content
+      await this.sectionService.updateSectionContent(
+        section.id,
+        sectionData.content
+      );
+    }
+  }
+
   // Simplified updateEntry method
   async updateEntry(date: string, entry: JournalEntry): Promise<JournalEntry> {
     try {
       await database.write(async () => {
         // Get or create journal entry
-        const entryRecords = await database.collections
-          .get<JournalEntryModel>('journal_entries')
-          .query(Q.where('date', date))
-          .fetch();
+        const journalEntry = await this.getOrCreateJournalEntry(date);
 
-        let journalEntry: JournalEntryModel;
-        if (entryRecords.length > 0) {
-          journalEntry = entryRecords[0];
-        } else {
-          // Create new entry
-          journalEntry = await database.collections
-            .get<JournalEntryModel>('journal_entries')
-            .create((record: JournalEntryModel) => {
-              record.date = date;
-            });
-          logger.log('Created new entry with ID:', journalEntry.id);
-        }
+        // Get existing sections that are already linked to this journal entry
+        const existingSectionsMap = await this.getExistingSectionsMap(
+          journalEntry.id
+        );
 
+        // Process each section update
         for (const [sectionType, sectionData] of Object.entries(
           entry.sections
         )) {
-          // Get the section for this timeframe (uses current template settings)
-          const section = await this.sectionService.getOrCreateSection(
+          await this.processSectionUpdate(
             sectionType,
+            sectionData,
+            existingSectionsMap,
+            journalEntry.id,
             date
-          );
-
-          // Link section to this journal entry
-          await this.sectionService.linkSectionToEntry(
-            section.id,
-            journalEntry.id
-          );
-
-          // Update section content
-          await this.sectionService.updateSectionContent(
-            section.id,
-            sectionData.content
           );
         }
       });

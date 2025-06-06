@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const logger = require('../src/services/logger');
 
 // Database file paths for LokiJS
 const DB_PATHS = [
@@ -38,7 +39,7 @@ function resetType() {
 }
 
 function clearDatabaseFiles() {
-  console.log('🗑️  Clearing database files...');
+  logger.log('🗑️  Clearing database files...');
 
   let filesDeleted = 0;
 
@@ -46,10 +47,10 @@ function clearDatabaseFiles() {
     if (fs.existsSync(dbPath)) {
       try {
         fs.unlinkSync(dbPath);
-        console.log(`   ✅ Deleted: ${dbPath}`);
+        logger.log(`   ✅ Deleted: ${dbPath}`);
         filesDeleted++;
       } catch (error) {
-        console.log(`   ❌ Failed to delete: ${dbPath} - ${error.message}`);
+        logger.log(`   ❌ Failed to delete: ${dbPath} - ${error.message}`);
       }
     }
   });
@@ -58,7 +59,7 @@ function clearDatabaseFiles() {
 }
 
 function clearStorageFiles() {
-  console.log('🗑️  Clearing storage files...');
+  logger.log('🗑️  Clearing storage files...');
 
   let dirsDeleted = 0;
 
@@ -66,10 +67,10 @@ function clearStorageFiles() {
     if (fs.existsSync(storagePath)) {
       try {
         fs.rmSync(storagePath, { recursive: true, force: true });
-        console.log(`   ✅ Deleted directory: ${storagePath}`);
+        logger.log(`   ✅ Deleted directory: ${storagePath}`);
         dirsDeleted++;
       } catch (error) {
-        console.log(
+        logger.log(
           `   ❌ Failed to delete directory: ${storagePath} - ${error.message}`
         );
       }
@@ -82,75 +83,73 @@ function clearStorageFiles() {
 function showInstructions() {
   const type = resetType();
 
-  console.log('');
-  console.log('📋 Additional Instructions:');
-  console.log('');
-  console.log('To complete the database reset:');
-  console.log('1. Refresh your browser (Cmd+R / Ctrl+R)');
-  console.log('2. Clear browser data:');
-  console.log('   - Open Developer Tools (F12)');
-  console.log('   - Go to Application/Storage tab');
-  console.log('   - Clear IndexedDB and Local Storage');
-  console.log('   - Or use browser\'s "Clear site data" option');
-  console.log('');
+  logger.log('');
+  logger.log('📋 Additional Instructions:');
+  logger.log('');
+  logger.log('To complete the database reset:');
+  logger.log('1. Refresh your browser (Cmd+R / Ctrl+R)');
+  logger.log('2. Clear browser data:');
+  logger.log('   - Open Developer Tools (F12)');
+  logger.log('   - Go to Application/Storage tab');
+  logger.log('   - Clear IndexedDB and Local Storage');
+  logger.log('   - Or use browser\'s "Clear site data" option');
+  logger.log('');
 
   if (type === 'all') {
-    console.log('🔄 For runtime database reset, open browser console and run:');
-    console.log('   DatabaseResetUtil.resetDatabase()');
+    logger.log('🔄 For runtime database reset, open browser console and run:');
+    logger.log('   DatabaseResetUtil.resetDatabase()');
   } else if (type === 'user') {
-    console.log(
-      '🔄 For runtime user data reset, open browser console and run:'
-    );
-    console.log('   DatabaseResetUtil.resetUserDataOnly()');
+    logger.log('🔄 For runtime user data reset, open browser console and run:');
+    logger.log('   DatabaseResetUtil.resetUserDataOnly()');
   } else if (type === 'templates') {
-    console.log('🔄 For runtime template reset, open browser console and run:');
-    console.log('   DatabaseResetUtil.resetTemplatesOnly()');
+    logger.log('🔄 For runtime template reset, open browser console and run:');
+    logger.log('   DatabaseResetUtil.resetTemplatesOnly()');
   }
 
-  console.log('');
+  logger.log('');
 }
 
 function main() {
   const type = resetType();
 
-  console.log('');
-  console.log('💣 DATABASE RESET UTILITY');
-  console.log('========================');
-  console.log(`Reset type: ${type}`);
-  console.log('');
+  logger.log('');
+  logger.log('💣 DATABASE RESET UTILITY');
+  logger.log('========================');
+  logger.log(`Reset type: ${type}`);
+  logger.log('');
 
   if (!['all', 'user', 'templates'].includes(type)) {
-    console.log('❌ Invalid reset type. Use: all, user, or templates');
+    logger.log('❌ Invalid reset type. Use: all, user, or templates');
     process.exit(1);
   }
 
   // Warning for production-like environments
   if (process.env.NODE_ENV === 'production') {
-    console.log('⚠️  WARNING: This appears to be a production environment!');
-    console.log(
+    logger.log('⚠️  WARNING: This appears to be a production environment!');
+    logger.log(
       '   Database reset operations should only be used in development.'
     );
-    console.log('   Exiting for safety.');
+    logger.log('   Exiting for safety.');
     process.exit(1);
   }
 
-  console.log('⚠️  WARNING: This will permanently delete data!');
-  console.log('   Make sure you have backups if needed.');
-  console.log('');
+  logger.log('⚠️  WARNING: This will permanently delete data!');
+  logger.log('   Make sure you have backups if needed.');
+  logger.log('');
 
   // File-based reset (clears LokiJS files)
   const filesDeleted = clearDatabaseFiles();
   const dirsDeleted = clearStorageFiles();
 
   if (filesDeleted === 0 && dirsDeleted === 0) {
-    console.log('ℹ️  No database files found to delete.');
-    console.log(
+    logger.log('ℹ️  No database files found to delete.');
+    logger.log(
       '   This is normal for a fresh installation or browser-only storage.'
     );
   }
 
-  console.log('');
-  console.log('✅ File-based reset completed!');
+  logger.log('');
+  logger.log('✅ File-based reset completed!');
 
   showInstructions();
 }

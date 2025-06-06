@@ -6,6 +6,7 @@ import {
 } from '../database/watermelon/models';
 import { Q } from '@nozbe/watermelondb';
 import { TimeframeCalculator } from '../utils/timeframeUtils';
+import logger from '../utils/logger';
 
 export interface SectionWithTemplate {
   // Section data
@@ -32,6 +33,7 @@ export class SectionService {
     sectionId: string,
     content: string
   ): Promise<void> {
+    logger.log('Updating section content:', sectionId, content);
     const sectionsCollection =
       database.collections.get<SectionModel>('sections');
     const section = await sectionsCollection.find(sectionId);
@@ -90,6 +92,7 @@ export class SectionService {
   private async getTemplate(
     sectionType: string
   ): Promise<TemplateSectionModel | null> {
+    logger.log('Getting template for section type:', sectionType);
     const templatesCollection =
       database.collections.get<TemplateSectionModel>('template_sections');
     try {
@@ -173,6 +176,7 @@ export class SectionService {
     sectionId: string,
     journalEntryId: string
   ): Promise<void> {
+    logger.log('Linking section to entry:', sectionId, journalEntryId);
     const junctionCollection =
       database.collections.get<SectionJournalEntryModel>(
         'section_journal_entries'
@@ -191,6 +195,11 @@ export class SectionService {
     templateId: string,
     newFrequency: string
   ): Promise<void> {
+    logger.log(
+      'Updating most recent section for frequency change:',
+      templateId,
+      newFrequency
+    );
     const sectionsCollection =
       database.collections.get<SectionModel>('sections');
     const junctionCollection =

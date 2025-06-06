@@ -3,11 +3,13 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import JournalEntryPage from './pages/JournalEntryPage';
 import TemplateManagementPage from './pages/TemplateManagementPage';
 import SettingsPage from './pages/SettingsPage';
+import DatabaseDebugPage from './pages/DatabaseDebugPage';
 import { useInitialization } from './services/initializationService';
 import { useConflictResolution } from './hooks/useConflictResolution';
 import { ConflictResolutionModal } from './components/ConflictResolutionModal';
 import { initializeSectionRegistry } from './components/sections/registry';
 import { DatabaseResetUtil } from './utils/databaseReset';
+import './utils/debugUtils'; // Import debug utilities for console access
 import './App.css';
 
 // Loading component while the app initializes
@@ -144,6 +146,9 @@ function App() {
           <Route path='/' element={<JournalEntryPage />} />
           <Route path='/templates' element={<TemplateManagementPage />} />
           <Route path='/settings' element={<SettingsPage />} />
+          {process.env.NODE_ENV === 'development' && (
+            <Route path='/debug/database' element={<DatabaseDebugPage />} />
+          )}
         </Routes>
 
         {/* Conflict Resolution Modal */}

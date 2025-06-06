@@ -2,6 +2,7 @@ import { useSyncStore } from '../stores/syncStore';
 import { cloudStorageManager } from './cloudStorageManager';
 import { backupManager } from './backupManager';
 import { logger } from '../utils/logger';
+import database from '../database/watermelon/database';
 
 // Simple event emitter for data changes
 class DataChangeEmitter {
@@ -36,6 +37,7 @@ class UnifiedSyncService {
   private debouncedBackup: () => void;
   private isInitialized = false;
   private isPaused = false;
+  private templateObserverUnsubscribe: (() => void) | null = null;
 
   constructor() {
     this.debouncedSync = debounce(this.performSync.bind(this), 2000);
@@ -55,6 +57,9 @@ class UnifiedSyncService {
     // Initialize cloud storage
     await cloudStorageManager.initializeFromSavedState();
 
+    // Set up automatic template change detection
+    this.setupTemplateChangeObserver();
+
     // Set backup manager provider after cloud storage initialization
     const activeProvider = cloudStorageManager.getActiveProvider();
     if (activeProvider) {
@@ -68,6 +73,27 @@ class UnifiedSyncService {
 
     this.isInitialized = true;
     logger.log('UNIFIED_SYNC: Initialization complete');
+  }
+
+  private setupTemplateChangeObserver() {
+    // Observe template tables for changes and automatically trigger sync
+    const templateTables = ['template_columns', 'template_sections'];
+
+    const subscription = database
+      .withChangesForTables(templateTables)
+      .subscribe(() => {
+        logger.log('UNIFIED_SYNC: Template changes detected, triggering sync');
+        dataChangeEmitter.emit();
+      });
+
+    this.templateObserverUnsubscribe = () => subscription.unsubscribe();
+  }
+
+  private cleanup() {
+    if (this.templateObserverUnsubscribe) {
+      this.templateObserverUnsubscribe();
+      this.templateObserverUnsubscribe = null;
+    }
   }
 
   // Public method to trigger sync
@@ -151,6 +177,7 @@ class UnifiedSyncService {
     try {
       await cloudStorageManager.disconnect();
       backupManager.setProvider(null);
+      this.cleanup();
       useSyncStore.getState().reset();
       logger.log('UNIFIED_SYNC: Cloud provider disconnected');
     } catch (error) {

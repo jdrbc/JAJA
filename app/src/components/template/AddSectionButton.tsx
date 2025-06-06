@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { useTemplateManagement } from '../../hooks/useTemplateManagement';
 import { SectionTemplate } from '../../services/api';
-import { logger } from '../../utils/logger';
-import { SectionRegistry } from '../sections/core/SectionRegistry';
+import SectionPropertyEditor from '../sections/SectionPropertyEditor';
 
 interface AddSectionButtonProps {
   columnId: string;
@@ -14,130 +12,25 @@ const AddSectionButton: React.FC<AddSectionButtonProps> = ({
   onSectionAdded,
 }) => {
   const [isCreating, setIsCreating] = useState(false);
-  const [title, setTitle] = useState('');
-  const [contentType, setContentType] = useState('text');
-  const [placeholder, setPlaceholder] = useState('');
-  const { createSection, isLoading } = useTemplateManagement();
 
-  // Get section types from registry
-  const registry = SectionRegistry.getInstance();
-  const sectionTypes = registry.getAllTypes();
-
-  // Helper function to get default values from section definition
-  const getDefaultValues = (sectionContentType: string) => {
-    const definition = registry.get(sectionContentType);
-    if (!definition) {
-      return {
-        title: '',
-        placeholder: '',
-        refresh_frequency: 'daily',
-        default_content: '',
-      };
-    }
-
-    const propertyFields = definition.getPropertyFields();
-    const defaults: Record<string, any> = {};
-
-    propertyFields.forEach(field => {
-      if (field.defaultValue !== undefined) {
-        defaults[field.key] = field.defaultValue;
-      }
-    });
-
-    return {
-      title: defaults.title || '',
-      placeholder: defaults.placeholder || '',
-      refresh_frequency: defaults.refresh_frequency || 'daily',
-      default_content: definition.getDefaultContent() || '',
-    };
-  };
-
-  const handleCreate = async () => {
-    if (!title.trim()) return;
-
-    try {
-      // Get default values from the section definition
-      const defaultValues = getDefaultValues(contentType);
-
-      const newSection = await createSection({
-        id: `section_${Date.now()}`,
-        title: title.trim(),
-        content_type: contentType,
-        placeholder: placeholder.trim() || defaultValues.placeholder,
-        default_content: defaultValues.default_content,
-        refresh_frequency: defaultValues.refresh_frequency,
-        column_id: columnId,
-      });
-      onSectionAdded(newSection);
-      setTitle('');
-      setPlaceholder('');
-      setContentType('text');
-      setIsCreating(false);
-    } catch (error) {
-      logger.error('Failed to create section:', error);
-    }
+  const handleSectionCreated = (section: SectionTemplate) => {
+    onSectionAdded(section);
+    setIsCreating(false);
   };
 
   const handleCancel = () => {
-    setTitle('');
-    setPlaceholder('');
-    setContentType('text');
     setIsCreating(false);
   };
 
   if (isCreating) {
     return (
-      <div className='mt-6 p-4 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50'>
-        <div className='space-y-3'>
-          <input
-            type='text'
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder='Section title'
-            className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
-            autoFocus
-            onKeyDown={e => {
-              if (e.key === 'Enter' && e.metaKey) handleCreate();
-              if (e.key === 'Escape') handleCancel();
-            }}
-          />
-
-          <select
-            value={contentType}
-            onChange={e => setContentType(e.target.value)}
-            className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
-          >
-            {sectionTypes.map(type => (
-              <option key={type.value} value={type.value}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type='text'
-            value={placeholder}
-            onChange={e => setPlaceholder(e.target.value)}
-            placeholder='Placeholder text (optional)'
-            className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
-          />
-
-          <div className='flex space-x-2'>
-            <button
-              onClick={handleCreate}
-              disabled={!title.trim() || isLoading}
-              className='px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50'
-            >
-              {isLoading ? 'Creating...' : 'Create'}
-            </button>
-            <button
-              onClick={handleCancel}
-              className='px-3 py-1 text-sm bg-gray-300 text-gray-700 rounded hover:bg-gray-400'
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      <div className='mt-6'>
+        <SectionPropertyEditor
+          columnId={columnId}
+          onSectionCreated={handleSectionCreated}
+          onClose={handleCancel}
+          isCreating={true}
+        />
       </div>
     );
   }

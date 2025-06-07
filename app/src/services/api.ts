@@ -32,6 +32,7 @@ export interface SectionTemplate {
   placeholder: string;
   default_content: string;
   content_type: string;
+  configuration: string;
   column_id?: string;
 }
 

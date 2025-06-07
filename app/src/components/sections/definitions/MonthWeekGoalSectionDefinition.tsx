@@ -720,6 +720,7 @@ export class MonthWeekGoalSectionDefinition extends BaseSectionDefinition {
         type: 'select',
         options: [{ value: 'monthly', label: 'Monthly' }],
         defaultValue: 'monthly',
+        hidden: true, // Hide fields with only one option
       },
     ];
   }

@@ -145,6 +145,7 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
           }
           placeholder={section.placeholder}
           entryDate={entryDate}
+          configuration={section.configuration}
         />
       )}
     </div>

@@ -26,6 +26,7 @@ export interface SectionWithTemplate {
   defaultContent: string;
   displayOrder: number;
   columnId: string;
+  configuration: string;
 }
 
 export class SectionService {
@@ -80,6 +81,7 @@ export class SectionService {
         defaultContent: template.defaultContent,
         displayOrder: template.displayOrder,
         columnId: template.columnId,
+        configuration: template.configuration,
       });
     }
 

@@ -15,6 +15,8 @@ export interface SectionRenderProps {
   placeholder?: string;
   isEditMode?: boolean;
   entryDate: string; // ISO date string of the journal entry being viewed
+  configuration?: string; // JSON configuration from section template
+  title?: string; // Section title
 }
 
 export interface SectionPropertyConfig {
@@ -25,6 +27,7 @@ export interface SectionPropertyConfig {
   placeholder?: string;
   required?: boolean;
   defaultValue?: any;
+  hidden?: boolean;
 }
 
 export abstract class BaseSectionDefinition {

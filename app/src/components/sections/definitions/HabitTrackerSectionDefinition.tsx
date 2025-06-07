@@ -8,38 +8,74 @@ import {
 } from '../core/BaseSectionDefinition';
 
 // Data interfaces
-interface HabitTrackerData {
+interface HabitConfig {
   name: string;
   color: string;
   frequency: 'daily' | 'weekly';
+}
+
+interface HabitDynamicData {
   completedDates: string[];
   createdAt: string;
 }
 
+interface HabitTrackerData extends HabitConfig, HabitDynamicData {}
+
 // Helper functions
-function parseHabitData(content: string): HabitTrackerData {
-  try {
-    const data = JSON.parse(content);
+function parseHabitConfig(configuration: string): HabitConfig {
+  // Handle empty or undefined configuration
+  if (!configuration || configuration.trim() === '') {
     return {
-      name: data.name || '',
-      color: data.color || '#3B82F6',
-      frequency: data.frequency || 'daily',
-      completedDates: data.completedDates || [],
-      createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+      name: '',
+      color: '#3B82F6',
+      frequency: 'daily',
+    };
+  }
+
+  try {
+    const data = JSON.parse(configuration);
+    return {
+      name: data.habit_name || data.title || data.name || '',
+      color: data.habit_color || data.color || '#3B82F6',
+      frequency: data.habit_frequency || data.frequency || 'daily',
     };
   } catch {
     return {
       name: '',
       color: '#3B82F6',
       frequency: 'daily',
+    };
+  }
+}
+
+function parseHabitDynamicData(content: string): HabitDynamicData {
+  try {
+    const data = JSON.parse(content);
+    return {
+      completedDates: data.completedDates || [],
+      createdAt: data.createdAt || new Date().toISOString().split('T')[0],
+    };
+  } catch {
+    return {
       completedDates: [],
       createdAt: new Date().toISOString().split('T')[0],
     };
   }
 }
 
-function serializeHabitData(data: HabitTrackerData): string {
-  return JSON.stringify(data);
+function parseHabitData(
+  content: string,
+  configuration: string = '',
+  title: string = ''
+): HabitTrackerData {
+  const config = parseHabitConfig(configuration);
+  const dynamic = parseHabitDynamicData(content);
+
+  return {
+    ...config,
+    ...dynamic,
+    name: title || config.name, // Use section title as habit name
+  };
 }
 
 function shouldCompleteOnDate(
@@ -238,8 +274,10 @@ const HabitTrackerDisplay: React.FC<SectionRenderProps> = ({
   content,
   onContentChange,
   entryDate,
+  configuration,
+  title,
 }) => {
-  const data = parseHabitData(content);
+  const data = parseHabitData(content, configuration, title);
   const today = new Date().toISOString().split('T')[0];
 
   // Check completion status for THIS journal entry's date
@@ -256,7 +294,7 @@ const HabitTrackerDisplay: React.FC<SectionRenderProps> = ({
     const toggleDate = entryDate;
 
     // Parse the current content to get fresh data
-    const currentData = parseHabitData(content);
+    const currentData = parseHabitData(content, configuration);
     const wasCompletedOnToggleDate =
       currentData.completedDates.includes(toggleDate);
 
@@ -264,14 +302,19 @@ const HabitTrackerDisplay: React.FC<SectionRenderProps> = ({
       ? currentData.completedDates.filter(date => date !== toggleDate)
       : [...currentData.completedDates, toggleDate];
 
-    const updatedData = { ...currentData, completedDates: newCompletedDates };
-    onContentChange(serializeHabitData(updatedData));
+    // Only update dynamic data in content
+    const updatedDynamicData = {
+      completedDates: newCompletedDates,
+      createdAt: currentData.createdAt,
+    };
+    onContentChange(JSON.stringify(updatedDynamicData));
   };
 
   if (!data.name.trim()) {
     return (
       <div className='text-gray-400 italic p-3'>
-        Click to configure your habit...
+        💡 <strong>Habit not configured yet.</strong> Configure this habit in
+        the Template Editor → Section Properties.
       </div>
     );
   }
@@ -309,12 +352,15 @@ const HabitTrackerDisplay: React.FC<SectionRenderProps> = ({
   );
 };
 
-// Editor Component - Configuration happens in layout editor only
+// Editor Component - Shows same interface as display when configured
 const HabitTrackerEditor: React.FC<SectionRenderProps> = ({
   content,
+  onContentChange,
   entryDate,
+  configuration,
+  title,
 }) => {
-  const data = parseHabitData(content);
+  const data = parseHabitData(content, configuration, title);
 
   if (!data.name.trim()) {
     return (
@@ -333,8 +379,10 @@ const HabitTrackerEditor: React.FC<SectionRenderProps> = ({
   return (
     <HabitTrackerDisplay
       content={content}
-      onContentChange={() => {}}
+      onContentChange={onContentChange}
       entryDate={entryDate}
+      configuration={configuration}
+      title={title}
     />
   );
 };
@@ -348,34 +396,18 @@ export class HabitTrackerSectionDefinition extends BaseSectionDefinition {
   // Indicate this section is interactive in display mode
   readonly isInteractiveInDisplayMode = true;
 
-  // Content validation
-  isContentEmpty(content: string): boolean {
-    try {
-      const data = parseHabitData(content);
-      return !data.name || data.name.trim() === '';
-    } catch {
-      return true;
-    }
+  // Content validation - checks if configuration has name
+  isContentEmpty(content: string, configuration?: string): boolean {
+    // For habit tracker, we consider it empty if no title is set in the section
+    // Since we can't access the title here, we'll return false to indicate not empty
+    // The actual validation happens at the component level
+    return false;
   }
 
   validateContent(content: string): SectionValidationResult {
     try {
-      const data = parseHabitData(content);
-
-      if (!data.name || data.name.trim().length < 2) {
-        return {
-          isValid: false,
-          errors: ['Habit name must be at least 2 characters'],
-        };
-      }
-
-      if (!data.color.match(/^#[0-9A-Fa-f]{6}$/)) {
-        return {
-          isValid: false,
-          errors: ['Color must be a valid hex color (e.g., #3B82F6)'],
-        };
-      }
-
+      // Validate content format (dynamic data)
+      parseHabitDynamicData(content);
       return { isValid: true };
     } catch (error) {
       return {
@@ -387,30 +419,31 @@ export class HabitTrackerSectionDefinition extends BaseSectionDefinition {
 
   // Serialization
   parseContent(rawContent: string): SectionContentData {
-    return parseHabitData(rawContent);
+    return parseHabitDynamicData(rawContent);
   }
 
   serializeContent(data: SectionContentData): string {
-    return serializeHabitData(data as HabitTrackerData);
+    return JSON.stringify(data);
   }
 
-  // Default content
+  // Default content - just dynamic data
   getDefaultContent(): string {
-    return serializeHabitData({
-      name: 'New Habit',
-      color: '#3B82F6',
-      frequency: 'daily',
+    return JSON.stringify({
       completedDates: [],
       createdAt: new Date().toISOString().split('T')[0],
     });
   }
 
   // Markdown export
-  formatToMarkdown(title: string, content: string): string {
-    if (this.isContentEmpty(content)) return '';
+  formatToMarkdown(
+    title: string,
+    content: string,
+    configuration?: string
+  ): string {
+    if (!title?.trim()) return '';
 
     try {
-      const data = parseHabitData(content);
+      const data = parseHabitData(content, configuration || '', title);
       const today = new Date().toISOString().split('T')[0];
       const strength = Math.round(calculateHabitStrength(data, today) * 100);
       const streak = calculateCurrentStreak(data);
@@ -425,7 +458,7 @@ export class HabitTrackerSectionDefinition extends BaseSectionDefinition {
     }
   }
 
-  // Property configuration
+  // Property configuration - individual fields that will be saved to configuration
   getPropertyFields(): SectionPropertyConfig[] {
     return [
       {
@@ -436,6 +469,23 @@ export class HabitTrackerSectionDefinition extends BaseSectionDefinition {
         required: true,
       },
       {
+        key: 'habit_color',
+        label: 'Color',
+        type: 'text',
+        placeholder: '#3B82F6',
+        defaultValue: '#3B82F6',
+      },
+      {
+        key: 'habit_frequency',
+        label: 'Frequency',
+        type: 'select',
+        options: [
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+        ],
+        defaultValue: 'daily',
+      },
+      {
         key: 'refresh_frequency',
         label: 'Duration',
         type: 'select',
@@ -443,12 +493,7 @@ export class HabitTrackerSectionDefinition extends BaseSectionDefinition {
           { value: 'persistent', label: 'Persistent (across all entries)' },
         ],
         defaultValue: 'persistent',
-      },
-      {
-        key: 'default_content',
-        label: 'Habit Configuration',
-        type: 'textarea',
-        placeholder: 'Configure habit settings',
+        hidden: true, // Hide fields with only one option
       },
     ];
   }

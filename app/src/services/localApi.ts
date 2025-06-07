@@ -53,6 +53,7 @@ export class LocalApiService {
         placeholder: record.placeholder,
         default_content: record.defaultContent,
         content_type: record.contentType,
+        configuration: record.configuration,
         column_id: record.columnId,
       }));
 
@@ -112,6 +113,7 @@ export class LocalApiService {
               id: template.id,
               display_order: template.display_order,
               default_content: template.default_content,
+              configuration: template.configuration,
               column_id: template.column_id,
             };
           } else {
@@ -140,6 +142,7 @@ export class LocalApiService {
               id: template.id,
               display_order: template.display_order,
               default_content: template.default_content,
+              configuration: template.configuration,
               column_id: template.column_id,
             };
           }
@@ -166,6 +169,7 @@ export class LocalApiService {
             id: template.id,
             display_order: template.display_order,
             default_content: template.default_content,
+            configuration: template.configuration,
             column_id: template.column_id,
           };
         }
@@ -438,6 +442,7 @@ export class LocalApiService {
             record.placeholder = sectionData.placeholder || '';
             record.defaultContent = sectionData.default_content || '';
             record.contentType = sectionData.content_type;
+            record.configuration = sectionData.configuration || '';
             record.columnId = sectionData.column_id || '';
           });
       });
@@ -479,6 +484,8 @@ export class LocalApiService {
             section.defaultContent = sectionData.default_content;
           if (sectionData.content_type !== undefined)
             section.contentType = sectionData.content_type;
+          if (sectionData.configuration !== undefined)
+            section.configuration = sectionData.configuration;
           if (sectionData.column_id !== undefined)
             section.columnId = sectionData.column_id;
         });
@@ -499,6 +506,7 @@ export class LocalApiService {
           placeholder: record.placeholder,
           default_content: record.defaultContent,
           content_type: record.contentType,
+          configuration: record.configuration,
           column_id: record.columnId,
         };
       });

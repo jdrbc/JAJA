@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 1,
+  version: 2,
   tables: [
     tableSchema({
       name: 'journal_entries',
@@ -52,6 +52,7 @@ export const schema = appSchema({
         { name: 'placeholder', type: 'string' },
         { name: 'default_content', type: 'string' },
         { name: 'content_type', type: 'string' },
+        { name: 'configuration', type: 'string' },
         { name: 'column_id', type: 'string', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },

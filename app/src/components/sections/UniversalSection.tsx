@@ -10,6 +10,7 @@ export interface UniversalSectionProps {
   onContentChange: (content: string) => void;
   placeholder?: string;
   entryDate: string;
+  configuration?: string;
 }
 
 const UniversalSection: React.FC<UniversalSectionProps> = ({
@@ -19,6 +20,7 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
   onContentChange,
   placeholder,
   entryDate,
+  configuration,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const registry = SectionRegistry.getInstance();
@@ -35,8 +37,14 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
 
   return (
     <div className='mb-6'>
-      <SectionTitle title={title} />
-      <div className='pl-4'>
+      {/* Hide section title for header sections since the content IS the header */}
+      {/* Also hide for habit tracker since it displays the title as the habit name */}
+      {type !== 'header' && type !== 'habit_tracker' && (
+        <SectionTitle title={title} />
+      )}
+      <div
+        className={type !== 'header' && type !== 'habit_tracker' ? 'pl-4' : ''}
+      >
         {isEditing ? (
           <div data-testid={`${type}-editor`}>
             {definition.renderEditor({
@@ -50,6 +58,8 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
               placeholder,
               isEditMode: true,
               entryDate,
+              configuration,
+              title,
             })}
             <div className='mt-2 flex space-x-2'>
               <button
@@ -80,6 +90,8 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
               placeholder,
               isEditMode: false,
               entryDate,
+              configuration,
+              title,
             })}
           </div>
         )}

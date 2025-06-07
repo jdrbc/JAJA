@@ -75,6 +75,7 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
       placeholder: defaultValues.placeholder,
       default_content: defaultValues.default_content,
       content_type: 'text',
+      configuration: '',
       column_id: '',
     };
   });
@@ -89,6 +90,7 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
       placeholder: defaultValues.placeholder,
       default_content: defaultValues.default_content,
       content_type: 'text',
+      configuration: '',
       column_id: columns.length > 0 ? columns[0].id : '',
     });
   };
@@ -128,6 +130,7 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
       placeholder: section.placeholder || '',
       default_content: section.default_content || '',
       content_type: section.content_type || 'text',
+      configuration: section.configuration || '',
       column_id: section.column_id || '',
     });
     setShowForm(true);

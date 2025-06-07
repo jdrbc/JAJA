@@ -66,7 +66,7 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     if (section) {
       // Editing existing section
-      return {
+      const baseData = {
         id: section.id,
         title: section.title,
         placeholder: section.placeholder,
@@ -74,6 +74,22 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
         content_type: section.content_type,
         default_content: section.default_content,
       };
+
+      // Extract custom fields from configuration JSON
+      if (section.configuration) {
+        try {
+          const configData = JSON.parse(section.configuration);
+          return {
+            ...baseData,
+            ...configData,
+          };
+        } catch {
+          // If parsing fails, use base data only
+          return baseData;
+        }
+      }
+
+      return baseData;
     } else {
       // Creating new section
       const defaultValues = getDefaultValues('text');
@@ -92,15 +108,31 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
   useEffect(() => {
     if (isCreating && formData.content_type) {
       const defaultValues = getDefaultValues(formData.content_type);
-      setFormData(prev => ({
-        ...prev,
+      const currentDefinition = registry.get(formData.content_type);
+      const fields = currentDefinition?.getPropertyFields() || [];
+
+      const updates: Record<string, any> = {
         // Only update these if they haven't been manually set
-        placeholder: prev.placeholder || defaultValues.placeholder,
+        placeholder: formData.placeholder || defaultValues.placeholder,
         refresh_frequency: defaultValues.refresh_frequency,
         default_content: defaultValues.default_content,
+      };
+
+      // Add default values for all custom fields
+      fields.forEach(field => {
+        if (
+          !['title', 'placeholder', 'refresh_frequency'].includes(field.key)
+        ) {
+          updates[field.key] = formData[field.key] || field.defaultValue;
+        }
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        ...updates,
       }));
     }
-  }, [formData.content_type, isCreating, getDefaultValues]);
+  }, [formData.content_type, isCreating, getDefaultValues, registry, formData]);
 
   const currentDefinition = registry.get(formData.content_type);
   const fields = currentDefinition?.getPropertyFields() || [];
@@ -110,6 +142,31 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
     e.preventDefault();
 
     try {
+      // Separate standard fields from custom configuration fields
+      const standardFields = [
+        'id',
+        'title',
+        'placeholder',
+        'refresh_frequency',
+        'content_type',
+        'default_content',
+        'column_id',
+      ];
+      const customFields: Record<string, any> = {};
+
+      // Extract custom fields into configuration
+      Object.keys(formData).forEach(key => {
+        if (!standardFields.includes(key)) {
+          customFields[key] = formData[key];
+        }
+      });
+
+      // Generate configuration JSON from custom fields
+      const configuration =
+        Object.keys(customFields).length > 0
+          ? JSON.stringify(customFields)
+          : '';
+
       if (isCreating) {
         // Creating new section
         if (!formData.title?.trim() || !columnId) return;
@@ -121,6 +178,7 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
           placeholder: formData.placeholder?.trim() || '',
           default_content: formData.default_content || '',
           refresh_frequency: formData.refresh_frequency || 'daily',
+          configuration,
           column_id: columnId,
         });
 
@@ -135,6 +193,7 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
           refresh_frequency: formData.refresh_frequency,
           content_type: formData.content_type,
           default_content: formData.default_content,
+          configuration,
         });
 
         onUpdate?.();
@@ -232,15 +291,17 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
         )}
 
         {/* Dynamic fields from section definition */}
-        {fields.map(field => (
-          <div key={field.key}>
-            <label className='block text-sm font-medium text-gray-700 mb-1'>
-              {field.label}
-              {field.required && <span className='text-red-500 ml-1'>*</span>}
-            </label>
-            {renderField(field)}
-          </div>
-        ))}
+        {fields
+          .filter(field => !field.hidden)
+          .map(field => (
+            <div key={field.key}>
+              <label className='block text-sm font-medium text-gray-700 mb-1'>
+                {field.label}
+                {field.required && <span className='text-red-500 ml-1'>*</span>}
+              </label>
+              {renderField(field)}
+            </div>
+          ))}
 
         <div className='flex justify-end space-x-2 pt-4 border-t'>
           <button

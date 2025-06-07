@@ -191,8 +191,39 @@ class CloudStorageManager {
 
                 case 'use-cloud':
                   logger.log('CLOUD: User chose to keep cloud data');
+                  // Directly import the cloud binary data without conversion
+                  logger.log(
+                    'CLOUD: Importing cloud data, size:',
+                    cloudDatabaseData.length
+                  );
                   await databaseCompatibility.importDatabase(cloudDatabaseData);
-                  this.lastSavedDataHash = cloudHash;
+
+                  // Recalculate hash from imported data and save back to cloud to ensure consistency
+                  const postImportData =
+                    await databaseCompatibility.exportDatabaseAsync();
+                  const postImportHash =
+                    await databaseCompatibility.getContentHash();
+
+                  // Update cloud storage with the normalized data
+                  const normalizedHashBytes = new TextEncoder().encode(
+                    postImportHash
+                  );
+                  const normalizedDataWithHash = new Uint8Array(
+                    postImportData.length + normalizedHashBytes.length
+                  );
+                  normalizedDataWithHash.set(postImportData, 0);
+                  normalizedDataWithHash.set(
+                    normalizedHashBytes,
+                    postImportData.length
+                  );
+
+                  await this.activeProvider.saveData(normalizedDataWithHash);
+                  this.lastSavedDataHash = postImportHash;
+
+                  logger.log(
+                    'CLOUD: Cloud data restored and normalized, hash:',
+                    postImportHash
+                  );
                   window.location.reload();
                   break;
 
@@ -205,10 +236,13 @@ class CloudStorageManager {
               return false;
             }
           } else {
-            // No conflict resolver - use cloud data by default
-            logger.log('CLOUD: No conflict resolver, using cloud data');
-            await databaseCompatibility.importDatabase(cloudDatabaseData);
-            this.lastSavedDataHash = cloudHash;
+            // No conflict resolver - throw error to prevent data loss
+            logger.error(
+              'CLOUD: Data conflict detected but no conflict resolver available'
+            );
+            throw new Error(
+              'Data conflict detected between local and cloud storage. Cannot proceed without conflict resolution.'
+            );
           }
         } else {
           // No conflict

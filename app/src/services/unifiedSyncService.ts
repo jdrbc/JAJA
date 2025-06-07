@@ -1,5 +1,6 @@
 import { useSyncStore } from '../stores/syncStore';
 import { cloudStorageManager } from './cloudStorageManager';
+import { conflictResolutionService } from './conflictResolutionService';
 import { backupManager } from './backupManager';
 import { logger } from '../utils/logger';
 import database from '../database/watermelon/database';
@@ -53,6 +54,11 @@ class UnifiedSyncService {
     if (this.isInitialized) return;
 
     logger.log('UNIFIED_SYNC: Initializing unified sync service');
+
+    // Set up conflict resolution service before initializing cloud storage
+    cloudStorageManager.setConflictResolver(
+      conflictResolutionService.conflictResolver
+    );
 
     // Initialize cloud storage
     await cloudStorageManager.initializeFromSavedState();

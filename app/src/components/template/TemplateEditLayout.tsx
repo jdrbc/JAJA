@@ -350,6 +350,7 @@ const TemplateEditLayoutContent: React.FC<TemplateEditLayoutProps> = ({
                   handleSectionPropertiesOpen(section.id)
                 }
                 onSectionPropertiesClose={handleSectionPropertiesClose}
+                entryDate={'2025-06-06'}
               />
             ))}
 

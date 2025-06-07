@@ -1,7 +1,7 @@
 export interface TimeframeBounds {
   start: string; // YYYY-MM-DD
   end: string; // YYYY-MM-DD
-  type: 'daily' | 'weekly' | 'monthly';
+  type: 'daily' | 'weekly' | 'monthly' | 'persistent';
 }
 
 export class TimeframeCalculator {
@@ -44,6 +44,13 @@ export class TimeframeCalculator {
           start: this.formatDate(firstDay),
           end: this.formatDate(lastDay),
           type: 'monthly',
+        };
+
+      case 'persistent':
+        return {
+          start: date,
+          end: this.formatDate(new Date('9999-12-31')),
+          type: 'persistent',
         };
 
       default:

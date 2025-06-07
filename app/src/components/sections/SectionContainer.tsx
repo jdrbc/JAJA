@@ -17,6 +17,7 @@ interface SectionContainerProps {
   openPropertiesSectionId?: string | null;
   onSectionPropertiesOpen?: () => void;
   onSectionPropertiesClose?: () => void;
+  entryDate: string;
 }
 
 const SectionContainer: React.FC<SectionContainerProps> = ({
@@ -29,6 +30,7 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
   openPropertiesSectionId,
   onSectionPropertiesOpen,
   onSectionPropertiesClose,
+  entryDate,
 }) => {
   const {
     attributes,
@@ -142,6 +144,7 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
             onContentChange(section.id, newContent)
           }
           placeholder={section.placeholder}
+          entryDate={entryDate}
         />
       )}
     </div>

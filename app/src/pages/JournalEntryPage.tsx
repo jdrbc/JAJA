@@ -15,7 +15,7 @@ import { formatDateForAPI } from '../utils/dates';
 import { logger } from '../utils/logger';
 import { useJournalEntry, useTemplates } from '../services/reactiveDataService';
 import { createDebouncedSave } from '../utils/debounceUtils';
-import { useSyncStore } from '../stores/syncStore';
+import { useSyncStore, useSyncStatus } from '../stores/syncStore';
 import { useContentUndo } from '../hooks/useContentUndo';
 import { sectionRegistry } from '../components/sections/registry';
 
@@ -26,8 +26,9 @@ const JournalEntryPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Get sync store actions
+  // Get sync store actions and status
   const { setPending, completeSync, failSync } = useSyncStore();
+  const syncStatus = useSyncStatus();
 
   // Get undo/redo functions
   const { undo, redo, canUndo, canRedo, undoDescription } = useContentUndo();
@@ -102,6 +103,12 @@ const JournalEntryPage: React.FC = () => {
   };
 
   const navigateToNextDay = () => {
+    // Prevent navigation while saves are pending or in progress
+    if (syncStatus === 'pending' || syncStatus === 'syncing') {
+      logger.log('Navigation blocked: saves in progress');
+      return;
+    }
+
     const nextDay = addDays(currentDate, 1);
     const today = new Date();
 
@@ -112,6 +119,12 @@ const JournalEntryPage: React.FC = () => {
   };
 
   const navigateToPreviousDay = () => {
+    // Prevent navigation while saves are pending or in progress
+    if (syncStatus === 'pending' || syncStatus === 'syncing') {
+      logger.log('Navigation blocked: saves in progress');
+      return;
+    }
+
     const previousDay = addDays(currentDate, -1);
     navigateToDate(previousDay);
   };
@@ -272,6 +285,9 @@ const JournalEntryPage: React.FC = () => {
         isCurrentDayToday={isCurrentDayToday}
         copyStatus={copyStatus}
         onCopyToClipboard={copyToMarkdown}
+        navigationDisabled={
+          syncStatus === 'pending' || syncStatus === 'syncing'
+        }
       />
 
       {/* Content Undo/Redo Toolbar */}

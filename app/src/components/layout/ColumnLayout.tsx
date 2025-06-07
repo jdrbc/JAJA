@@ -57,6 +57,7 @@ const ColumnLayout: React.FC<ColumnLayoutProps> = ({
               content={section.content}
               onContentChange={onContentChange}
               isEditMode={false}
+              entryDate={entry?.date || new Date().toISOString().split('T')[0]}
             />
           ))}
         </div>

@@ -10,6 +10,7 @@ interface JournalHeaderProps {
   isCurrentDayToday: () => boolean;
   copyStatus: 'idle' | 'copied';
   onCopyToClipboard: () => void;
+  navigationDisabled?: boolean;
 }
 
 export default function JournalHeader({
@@ -19,6 +20,7 @@ export default function JournalHeader({
   isCurrentDayToday,
   copyStatus,
   onCopyToClipboard,
+  navigationDisabled = false,
 }: JournalHeaderProps) {
   const [showCopied, setShowCopied] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -126,6 +128,7 @@ export default function JournalHeader({
             onNextDay={onNavigateToNextDay}
             onPreviousDay={onNavigateToPreviousDay}
             isCurrentDay={isCurrentDayToday()}
+            navigationDisabled={navigationDisabled}
           />
         </div>
 

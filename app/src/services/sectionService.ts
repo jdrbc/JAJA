@@ -13,7 +13,7 @@ export interface SectionWithTemplate {
   id: string;
   type: string;
   content: string;
-  timeframeType: 'daily' | 'weekly' | 'monthly';
+  timeframeType: 'daily' | 'weekly' | 'monthly' | 'persistent';
   timeframeStart: string;
   timeframeEnd: string;
   createdAt: Date;
@@ -121,7 +121,30 @@ export class SectionService {
     const sectionsCollection =
       database.collections.get<SectionModel>('sections');
 
-    if (template.refreshFrequency === 'daily') {
+    if (template.refreshFrequency === 'persistent') {
+      // Persistent sections: one section that persists across all entries
+      const existing = await sectionsCollection
+        .query(
+          Q.where('type', sectionType),
+          Q.where('timeframe_type', 'persistent')
+        )
+        .fetch();
+
+      if (existing.length > 0) {
+        return { id: existing[0].id, content: existing[0].content };
+      }
+
+      // Create new persistent section with no end date
+      const newSection = await sectionsCollection.create(section => {
+        section.type = sectionType;
+        section.content = '';
+        section.timeframeType = 'persistent';
+        section.timeframeStart = entryDate; // Start from when first accessed
+        section.timeframeEnd = '9999-12-31'; // No end date
+      });
+
+      return { id: newSection.id, content: newSection.content };
+    } else if (template.refreshFrequency === 'daily') {
       // Daily sections: one per day
       const existing = await sectionsCollection
         .query(

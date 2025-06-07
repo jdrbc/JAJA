@@ -9,6 +9,7 @@ export interface UniversalSectionProps {
   content: string;
   onContentChange: (content: string) => void;
   placeholder?: string;
+  entryDate: string;
 }
 
 const UniversalSection: React.FC<UniversalSectionProps> = ({
@@ -17,6 +18,7 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
   content,
   onContentChange,
   placeholder,
+  entryDate,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const registry = SectionRegistry.getInstance();
@@ -47,6 +49,7 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
               },
               placeholder,
               isEditMode: true,
+              entryDate,
             })}
             <div className='mt-2 flex space-x-2'>
               <button
@@ -59,8 +62,16 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
           </div>
         ) : (
           <div
-            className='cursor-pointer p-2 rounded hover:bg-gray-50'
-            onClick={() => setIsEditing(true)}
+            className={`p-2 rounded ${
+              definition.isInteractiveInDisplayMode
+                ? ''
+                : 'cursor-pointer hover:bg-gray-50'
+            }`}
+            onClick={
+              definition.isInteractiveInDisplayMode
+                ? undefined
+                : () => setIsEditing(true)
+            }
             data-testid={`${type}-display`}
           >
             {definition.renderDisplay({
@@ -68,6 +79,7 @@ const UniversalSection: React.FC<UniversalSectionProps> = ({
               onContentChange,
               placeholder,
               isEditMode: false,
+              entryDate,
             })}
           </div>
         )}

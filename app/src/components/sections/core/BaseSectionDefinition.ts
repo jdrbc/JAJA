@@ -14,6 +14,7 @@ export interface SectionRenderProps {
   onContentChange: (content: string) => void;
   placeholder?: string;
   isEditMode?: boolean;
+  entryDate: string; // ISO date string of the journal entry being viewed
 }
 
 export interface SectionPropertyConfig {
@@ -30,6 +31,10 @@ export abstract class BaseSectionDefinition {
   abstract readonly id: string;
   abstract readonly name: string;
   abstract readonly description: string;
+
+  // Optional flag to indicate this section is interactive in display mode
+  // and should not trigger edit mode when clicked
+  readonly isInteractiveInDisplayMode?: boolean;
 
   // Content validation
   abstract isContentEmpty(content: string): boolean;
@@ -88,6 +93,7 @@ export abstract class CommonSectionDefinition extends BaseSectionDefinition {
           { value: 'daily', label: 'Daily' },
           { value: 'weekly', label: 'Weekly' },
           { value: 'monthly', label: 'Monthly' },
+          { value: 'persistent', label: '∞' },
         ],
         defaultValue: 'daily',
       },

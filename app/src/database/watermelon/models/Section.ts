@@ -10,7 +10,11 @@ export default class Section extends Model {
 
   @field('type') type!: string; // FK to template_sections.id
   @field('content') content!: string;
-  @field('timeframe_type') timeframeType!: 'daily' | 'weekly' | 'monthly';
+  @field('timeframe_type') timeframeType!:
+    | 'daily'
+    | 'weekly'
+    | 'monthly'
+    | 'persistent';
   @field('timeframe_start') timeframeStart!: string; // YYYY-MM-DD
   @field('timeframe_end') timeframeEnd!: string; // YYYY-MM-DD
   @date('created_at') createdAt!: Date;

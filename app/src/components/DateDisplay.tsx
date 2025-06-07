@@ -6,6 +6,7 @@ interface DateDisplayProps {
   onNextDay: () => void;
   isCurrentDay: boolean;
   isLoading?: boolean;
+  navigationDisabled?: boolean;
 }
 
 const DateDisplay: React.FC<DateDisplayProps> = ({
@@ -14,6 +15,7 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
   onNextDay,
   isCurrentDay,
   isLoading = false,
+  navigationDisabled = false,
 }) => {
   const formattedDate = date.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -29,8 +31,9 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
         <button
           onClick={onPreviousDay}
           className='px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors'
-          disabled={isLoading}
+          disabled={isLoading || navigationDisabled}
           aria-label='Previous day'
+          title={navigationDisabled ? 'Saving changes...' : undefined}
         >
           {isLoading ? (
             <span className='inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1'></span>
@@ -40,8 +43,9 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
         <button
           onClick={onNextDay}
           className={`px-3 py-1 ${isCurrentDay ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded disabled:opacity-50 text-sm transition-colors`}
-          disabled={isCurrentDay || isLoading}
+          disabled={isCurrentDay || isLoading || navigationDisabled}
           aria-label='Next day'
+          title={navigationDisabled ? 'Saving changes...' : undefined}
         >
           Next&nbsp;→
           {isLoading ? (

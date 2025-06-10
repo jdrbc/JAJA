@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { SectionTemplate } from '../../services/api';
 import { localApiService } from '../../services/localApi';
 import { SectionRegistry } from './core/SectionRegistry';
@@ -104,35 +104,45 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
     }
   });
 
-  // Update default values when content type changes (for new sections)
-  useEffect(() => {
-    if (isCreating && formData.content_type) {
-      const defaultValues = getDefaultValues(formData.content_type);
-      const currentDefinition = registry.get(formData.content_type);
-      const fields = currentDefinition?.getPropertyFields() || [];
+  // Handle content type changes for new sections
+  const handleContentTypeChange = useCallback(
+    (newContentType: string) => {
+      if (isCreating) {
+        const defaultValues = getDefaultValues(newContentType);
+        const currentDefinition = registry.get(newContentType);
+        const fields = currentDefinition?.getPropertyFields() || [];
 
-      const updates: Record<string, any> = {
-        // Only update these if they haven't been manually set
-        placeholder: formData.placeholder || defaultValues.placeholder,
-        refresh_frequency: defaultValues.refresh_frequency,
-        default_content: defaultValues.default_content,
-      };
+        setFormData(prev => {
+          const updates: Record<string, any> = {
+            content_type: newContentType,
+            // Only update these if they haven't been manually set
+            placeholder: prev.placeholder || defaultValues.placeholder,
+            // Only update refresh_frequency if it's currently set to a default value
+            refresh_frequency: defaultValues.refresh_frequency,
+            default_content: defaultValues.default_content,
+          };
 
-      // Add default values for all custom fields
-      fields.forEach(field => {
-        if (
-          !['title', 'placeholder', 'refresh_frequency'].includes(field.key)
-        ) {
-          updates[field.key] = formData[field.key] || field.defaultValue;
-        }
-      });
+          // Add default values for all custom fields
+          fields.forEach(field => {
+            if (
+              !['title', 'placeholder', 'refresh_frequency'].includes(field.key)
+            ) {
+              updates[field.key] = prev[field.key] || field.defaultValue;
+            }
+          });
 
-      setFormData(prev => ({
-        ...prev,
-        ...updates,
-      }));
-    }
-  }, [formData.content_type, isCreating, getDefaultValues, registry, formData]);
+          return {
+            ...prev,
+            ...updates,
+          };
+        });
+      } else {
+        // For existing sections, only update the content type
+        setFormData(prev => ({ ...prev, content_type: newContentType }));
+      }
+    },
+    [isCreating, getDefaultValues, registry]
+  );
 
   const currentDefinition = registry.get(formData.content_type);
   const fields = currentDefinition?.getPropertyFields() || [];
@@ -275,9 +285,7 @@ const SectionPropertyEditor: React.FC<SectionPropertyEditorProps> = ({
             </label>
             <select
               value={formData.content_type}
-              onChange={e =>
-                setFormData(prev => ({ ...prev, content_type: e.target.value }))
-              }
+              onChange={e => handleContentTypeChange(e.target.value)}
               className='w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
               required
             >

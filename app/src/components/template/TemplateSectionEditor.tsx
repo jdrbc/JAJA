@@ -104,7 +104,14 @@ const TemplateSectionEditor: React.FC<TemplateSectionEditorProps> = ({
       // Only update these if they haven't been manually set
       title: prev.title || defaultValues.title,
       placeholder: prev.placeholder || defaultValues.placeholder,
-      refresh_frequency: defaultValues.refresh_frequency,
+      // Only update refresh_frequency if it's currently set to a default value
+      // and the user hasn't manually changed it for this section
+      refresh_frequency:
+        !editingSection ||
+        prev.refresh_frequency ===
+          getDefaultValues(prev.content_type).refresh_frequency
+          ? defaultValues.refresh_frequency
+          : prev.refresh_frequency,
       default_content: defaultValues.default_content,
     }));
   };

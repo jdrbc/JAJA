@@ -104,7 +104,6 @@ export class SectionService {
     }
   }
 
-  // New method: Get or create section within an existing write context
   async getOrCreateSection(
     sectionType: string,
     entryDate: string
@@ -201,7 +200,6 @@ export class SectionService {
     sectionId: string,
     journalEntryId: string
   ): Promise<void> {
-    logger.log('Linking section to entry:', sectionId, journalEntryId);
     const junctionCollection =
       database.collections.get<SectionJournalEntryModel>(
         'section_journal_entries'

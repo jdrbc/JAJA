@@ -144,6 +144,24 @@ export class BackupManager {
     try {
       logger.log('BACKUP: Restoring from backup:', backupId);
 
+      // Create a backup of the current database before restoring
+      try {
+        logger.log(
+          'BACKUP: Creating backup of current database before restore...'
+        );
+        await this.createBackup(true); // Manual backup to ensure it's created
+        logger.log('BACKUP: Successfully backed up current database');
+      } catch (backupError) {
+        logger.error(
+          'BACKUP: Failed to backup current database before restore:',
+          backupError
+        );
+        // Ask user if they want to continue without backing up current state
+        throw new Error(
+          'Failed to backup current database before restore. Restore cancelled for safety.'
+        );
+      }
+
       // Pause sync operations during restore to prevent race conditions
       unifiedSyncService.pauseSync();
 

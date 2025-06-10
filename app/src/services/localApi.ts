@@ -82,8 +82,6 @@ export class LocalApiService {
 
       // If entry exists, get its sections
       if (entry) {
-        logger.log(`Entry found for ${date}, entry ID: ${entry.id}`);
-
         const sectionsWithTemplates =
           await this.sectionService.getSectionsForEntry(entry.id);
         const existingSectionsMap: { [key: string]: any } = {};

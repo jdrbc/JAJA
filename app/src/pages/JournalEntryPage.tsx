@@ -81,7 +81,81 @@ const JournalEntryPage: React.FC = () => {
   // Update local state when entry changes from reactive service
   useEffect(() => {
     if (entry) {
-      setLocalEntry(entry);
+      setLocalEntry(prevLocalEntry => {
+        // Only update local state if we don't already have local changes
+        // or if the entry is significantly different (e.g., from navigation)
+        if (!prevLocalEntry || prevLocalEntry.date !== entry.date) {
+          console.log('reload: date change');
+          return entry;
+        }
+
+        // Check if the incoming entry has meaningful differences
+        // If it's just the same data we already saved, don't update
+        const hasSignificantChanges = Object.keys(entry.sections).some(
+          sectionId => {
+            const incomingContent = entry.sections[sectionId]?.content || '';
+            const localContent =
+              prevLocalEntry.sections[sectionId]?.content || '';
+
+            if (incomingContent !== localContent) {
+              console.log('reload: sig change in : ' + sectionId);
+
+              // For complex JSON content (weekly/monthly sections), check if it's just metadata changes
+              try {
+                const incomingData = JSON.parse(incomingContent);
+                const localData = JSON.parse(localContent);
+
+                // If both are valid JSON, do a deeper comparison excluding volatile metadata
+                if (
+                  typeof incomingData === 'object' &&
+                  typeof localData === 'object'
+                ) {
+                  // Create copies without metadata for comparison
+                  const incomingCopy = { ...incomingData };
+                  const localCopy = { ...localData };
+
+                  // Remove volatile metadata fields that change on every save
+                  if (incomingCopy.metadata) {
+                    delete incomingCopy.metadata.generatedAt;
+                  }
+                  if (localCopy.metadata) {
+                    delete localCopy.metadata.generatedAt;
+                  }
+
+                  // If the core content is the same after removing volatile metadata,
+                  // this is likely just a save echo - don't treat as significant
+                  const incomingStr = JSON.stringify(incomingCopy);
+                  const localStr = JSON.stringify(localCopy);
+
+                  if (incomingStr === localStr) {
+                    console.log(
+                      'reload: ignoring metadata-only change in: ' + sectionId
+                    );
+                    return false; // Not a significant change
+                  }
+                }
+              } catch {
+                // If not JSON or parsing fails, treat as significant change
+              }
+
+              return true; // Significant change detected
+            }
+            return false;
+          }
+        );
+
+        if (hasSignificantChanges) {
+          console.log(
+            'reload: updating local entry due to significant changes'
+          );
+          return entry;
+        } else {
+          console.log(
+            'reload: no significant changes, keeping current local entry'
+          );
+          return prevLocalEntry;
+        }
+      });
     }
   }, [entry]);
 

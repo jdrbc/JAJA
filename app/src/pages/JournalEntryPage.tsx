@@ -85,7 +85,6 @@ const JournalEntryPage: React.FC = () => {
         // Only update local state if we don't already have local changes
         // or if the entry is significantly different (e.g., from navigation)
         if (!prevLocalEntry || prevLocalEntry.date !== entry.date) {
-          console.log('reload: date change');
           return entry;
         }
 
@@ -98,8 +97,6 @@ const JournalEntryPage: React.FC = () => {
               prevLocalEntry.sections[sectionId]?.content || '';
 
             if (incomingContent !== localContent) {
-              console.log('reload: sig change in : ' + sectionId);
-
               // For complex JSON content (weekly/monthly sections), check if it's just metadata changes
               try {
                 const incomingData = JSON.parse(incomingContent);
@@ -128,9 +125,6 @@ const JournalEntryPage: React.FC = () => {
                   const localStr = JSON.stringify(localCopy);
 
                   if (incomingStr === localStr) {
-                    console.log(
-                      'reload: ignoring metadata-only change in: ' + sectionId
-                    );
                     return false; // Not a significant change
                   }
                 }
@@ -145,14 +139,8 @@ const JournalEntryPage: React.FC = () => {
         );
 
         if (hasSignificantChanges) {
-          console.log(
-            'reload: updating local entry due to significant changes'
-          );
           return entry;
         } else {
-          console.log(
-            'reload: no significant changes, keeping current local entry'
-          );
           return prevLocalEntry;
         }
       });
